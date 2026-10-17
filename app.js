@@ -108,6 +108,7 @@
         case 'switch': tone(900, 1200, 0.05, 'square', 0.07); break;
         case 'dry': tone(200, 160, 0.08, 'square', 0.08); break;
         case 'defeat': [440, 554, 659, 880].forEach((f, i) => tone(f, f, 0.1, 'square', 0.09, i * 0.06)); break;
+        case 'stage': [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, f, 0.16, 'triangle', 0.17, i * 0.07)); break;
         case 'ui': tone(700, 900, 0.07, 'triangle', 0.12); break;
         case 'buy': [660, 880, 1100].forEach((f, i) => tone(f, f, 0.1, 'triangle', 0.15, i * 0.07)); break;
         case 'land': break;
@@ -133,6 +134,7 @@
         case 'switch': play('switch'); break;
         case 'dry': play('dry'); break;
         case 'defeat': play('defeat'); break;
+        case 'stage': play('stage'); break;
         default: break;
       }
     }
@@ -143,7 +145,8 @@
   const els = {
     stage: $('stage'), cv: $('cv'), hud: $('hud'), pad: $('pad'),
     hDist: $('hDist'), hCoins: $('hCoins'), hGunIcon: $('hGunIcon'), hGunName: $('hGunName'), hWater: $('hWater'),
-    warn: $('warn'), toast: $('toast'),
+    warn: $('warn'), toast: $('toast'), sky2: $('sky2'),
+    hStage: $('hStage'), hStageBar: $('hStageBar'), banner: $('stageBanner'), sbName: $('sbName'), sbSub: $('sbSub'),
     bombN: $('bombN'), bDoor: $('bDoor'), bGrab: $('bGrab'), grabIc: $('grabIc'), grabLb: $('grabLb'), bBomb: $('bBomb'),
     vTitle: $('vTitle'), vShop: $('vShop'), vResult: $('vResult'), vPause: $('vPause')
   };
@@ -245,6 +248,7 @@
     releaseAll();
     show('play');
     snapCamera(app.g, app.camPlay);
+    applySky(1, true);
     updateHud(true);
   }
 
@@ -257,6 +261,7 @@
     persist();
     $('rTitle').textContent = g.over === 'fell' ? 'おっこちちゃった!' : 'つかまっちゃった!';
     $('rDist').textContent = String(m);
+    $('rStage').textContent = String(g.stage);
     $('rCoins').textContent = '+' + g.coins;
     $('rKills').textContent = String(g.kills);
     $('rBest').textContent = String(save.best);
@@ -429,6 +434,9 @@
     const m = C.metersOf(g.p.x);
     setText(els.hDist, 'dist', String(m));
     setText(els.hCoins, 'coins', String(g.coins));
+    setText(els.hStage, 'stage', 'ステージ ' + g.stage);
+    const prog = ((m % C.STAGE_LEN_M) / C.STAGE_LEN_M).toFixed(3);
+    if (app.cache.prog !== prog) { app.cache.prog = prog; els.hStageBar.style.transform = 'scaleX(' + prog + ')'; }
     const gun = C.curGun(g);
     setText(els.hGunIcon, 'gicon', gun.icon);
     setText(els.hGunName, 'gname', gun.name);
@@ -453,6 +461,43 @@
     if (app.cache.noBomb !== noBomb) { app.cache.noBomb = noBomb; els.bBomb.classList.toggle('off', noBomb); }
     const warn = g.danger < 130 && !app.over;
     if (app.cache.warn !== warn) { app.cache.warn = warn; els.warn.classList.toggle('on', warn); }
+  }
+
+  // ------------------------------------------------------------ ステージの空 (つぎのステージへは、空もじわっと変わる)
+  let skyTimer = 0;
+  function applySky(stage, instant) {
+    const css = A.skyCss(A.themeOf(stage));
+    app.skyStage = stage;
+    clearTimeout(skyTimer);
+    if (instant) {
+      els.stage.style.background = css;
+      els.sky2.style.transition = 'none';
+      els.sky2.style.opacity = '0';
+      return;
+    }
+    els.sky2.style.transition = 'none';
+    els.sky2.style.background = css;
+    els.sky2.style.opacity = '0';
+    void els.sky2.offsetWidth;                       // 変えた直後の状態を見せてから、うすい→こい へ
+    els.sky2.style.transition = 'opacity 1.2s ease';
+    els.sky2.style.opacity = '1';
+    skyTimer = setTimeout(() => {
+      els.stage.style.background = css;
+      els.sky2.style.transition = 'none';
+      els.sky2.style.opacity = '0';
+    }, 1250);
+  }
+
+  function showStageBanner(n, bonus) {
+    els.sbName.textContent = 'ステージ ' + n;
+    els.sbSub.textContent = 'ステージクリア! +' + bonus + 'コイン ・ 水まんたん';
+    els.banner.animate([
+      { opacity: 0, transform: 'translateX(-50%) scale(.6)' },
+      { opacity: 1, transform: 'translateX(-50%) scale(1.08)', offset: 0.18 },
+      { opacity: 1, transform: 'translateX(-50%) scale(1)', offset: 0.3 },
+      { opacity: 1, transform: 'translateX(-50%) scale(1)', offset: 0.78 },
+      { opacity: 0, transform: 'translateX(-50%) scale(1) translateY(-14px)' }
+    ], { duration: 2300, easing: 'ease-out', fill: 'none' });
   }
 
   // ------------------------------------------------------------ カメラ
@@ -505,6 +550,7 @@
         case 'dry': toast('水ぎれ! タンク💧をひろおう', 1400); break;
         case 'nope': if (g.bombs <= 0) toast('水ばくだんが ないよ', 1200); break;
         case 'trip': app.shake = Math.max(app.shake, 0.15); break;
+        case 'stage': showStageBanner(ev.n, ev.bonus); applySky(ev.n, false); break;
         default: break;
       }
     }
@@ -584,6 +630,9 @@
     app.shake = Math.max(0, app.shake - d);
     const v = app.view;
     v.t = app.time;
+    const stg = C.stageOf(g.p.x);
+    if (v.stage !== stg) { v.stage = stg; v.theme = A.themeOf(stg); }
+    if (app.mode === 'title' || app.mode === 'shop') { if (app.skyStage !== stg) applySky(stg, false); }
     const sx = app.shake > 0 ? (Math.random() - 0.5) * app.shake * 18 : 0;
     const sy = app.shake > 0 ? (Math.random() - 0.5) * app.shake * 18 : 0;
     v.camX = cam.x + sx; v.camY = cam.y + sy;
@@ -630,6 +679,7 @@
     window.addEventListener('orientationchange', () => setTimeout(resize, 120));
     if (window.ResizeObserver) new ResizeObserver(resize).observe(els.stage);
 
+    applySky(1, true);
     show('title');
     app.last = performance.now();
     requestAnimationFrame(tick);

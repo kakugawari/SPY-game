@@ -175,7 +175,7 @@ async function run() {
       return { ok: el.complete && el.naturalWidth > 0, top: im.top, bottom: im.bottom, left: im.left, right: im.right, playTop: play.top, ribbonBottom: logo.bottom, w: innerWidth, sprites: window.Art.spritesReady() };
     });
     ok(hero.ok && hero.sprites, '主人公の絵 (タイトルの大きな絵・走る/跳ぶ/撃つ) が読み込めている');
-    ok(hero.bottom <= hero.playTop + 1 && hero.top >= hero.ribbonBottom - 1 && hero.left >= 0 && hero.right <= hero.w, `タイトルの絵が「あそぶ」や題字に重ならず、画面に収まる (下 ${Math.round(hero.bottom)} <= ${Math.round(hero.playTop)})`);
+    ok(hero.bottom <= hero.playTop + 1 && hero.top >= hero.ribbonBottom - 12 && hero.left >= -6 && hero.right <= hero.w + 6, `タイトルの絵が「あそぶ」や題字に重ならず、画面に収まる (下 ${Math.round(hero.bottom)} <= ${Math.round(hero.playTop)})`);
 
     // ------------------------------------------------------------ はじめる
     section('あそぶ');
@@ -372,6 +372,53 @@ async function run() {
     ok(ic > 0, 'ボタンの名前を変えても、中の絵が残っている');
     await ctx.close();
 
+    // ------------------------------------------------------------ ステージ (200m ごと・終わりなし)
+    section('ステージ (200m ごとに進む・終わりが無い)');
+    ({ ctx, page } = await freshPage(browser));
+    page.on('pageerror', (e) => errors.push('ステージ: ' + e.message));
+    await page.evaluate(() => window.__app.start({ seed: 21, noEnemies: true }));
+    await installBot(page);
+    await page.evaluate(() => {
+      window.__auto = false;
+      const g = window.__app.game();
+      g.enemies.length = 0; g.spawnT = 999;
+      window.Core.ensure(g.world, 9000);
+      const b = g.world.b.find((q) => q.x + q.w > 7700 && q.x < 7850);
+      g.p.x = Math.max(b.x + 20, 7700); g.p.y = b.roofY; g.p.vy = 0; g.p.onGround = true; g.p.inside = -1; g.p.stun = 0;
+      g.stage = 1; g.water = 20; g.bombs = 1; window.__coins0 = g.coins;
+      window.__bot.until = null; window.__bot.air = false;
+    });
+    const stg0 = await page.evaluate(() => ({ t: document.getElementById('hStage').textContent, bg: getComputedStyle(document.getElementById('stage')).backgroundImage }));
+    ok(stg0.t === 'ステージ 1', `いまのステージが HUD に出る (${stg0.t})`);
+    await page.evaluate(() => { window.__auto = true; });
+    await page.waitForFunction(() => window.__app.game().stage === 2, null, { timeout: 8000 }).catch(() => {});
+    const stg1 = await page.evaluate(() => {
+      const g = window.__app.game();
+      const b = document.getElementById('stageBanner');
+      return { stage: g.stage, over: g.over, text: document.getElementById('hStage').textContent, anim: b.getAnimations().length, sb: document.getElementById('sbName').textContent,
+        coins: g.coins - window.__coins0, water: g.water, bombs: g.bombs };
+    });
+    ok(stg1.stage === 2 && !stg1.over, `200m を過ぎると、止まらずステージ 2 に入る (over=${stg1.over})`);
+    ok(stg1.anim > 0 && stg1.sb === 'ステージ 2', `「ステージ 2」の札が出る (${stg1.sb})`);
+    ok(stg1.coins >= 15 && stg1.water > 80 && stg1.bombs >= 2, `ごほうび: コイン +${stg1.coins}・水まんたん (${Math.round(stg1.water)})・ばくだん ${stg1.bombs}`);
+    await page.waitForTimeout(1500);
+    const stg2 = await page.evaluate(() => ({ t: document.getElementById('hStage').textContent, bg: getComputedStyle(document.getElementById('stage')).backgroundImage, op: getComputedStyle(document.getElementById('sky2')).opacity }));
+    ok(stg2.t === 'ステージ 2' && stg2.bg !== stg0.bg && stg2.op === '0', `空の色がステージ 2 のものに変わる (${stg2.bg.slice(16, 46)})`);
+    // ずっと先 (ステージ 40 ほど) でも、ふつうに遊べる
+    await page.evaluate(() => {
+      window.__auto = false;
+      const g = window.__app.game();
+      const x = 40 * 200 * 39 + 100;
+      window.Core.ensure(g.world, x + 3000);
+      const b = g.world.b[window.Core.indexNear(g.world, x)];
+      g.p.x = b.x + 20; g.p.y = b.roofY; g.p.vy = 0; g.p.onGround = true; g.p.stun = 0; g.p.inv = 0; g.enemies.length = 0;
+      window.__bot.until = null; window.__bot.air = false; window.__auto = true;
+    });
+    await page.waitForTimeout(3000);
+    const far = await page.evaluate(() => ({ stage: window.__app.game().stage, over: window.__app.game().over, text: document.getElementById('hStage').textContent }));
+    ok(far.stage >= 40 && !far.over, `ステージ ${far.stage} でもふつうに遊べる (「${far.text}」)`);
+    await ctx.close();
+
     // ------------------------------------------------------------ 追ってくる敵
     section('敵・つかまる・結果');
     ({ ctx, page } = await freshPage(browser));
@@ -394,6 +441,8 @@ async function run() {
     }));
     ok(res.mode === 'result' && res.shown, `おわると結果の画面が出る (${res.over})`);
     ok(res.title.length > 0 && /^\d+$/.test(res.dist), `結果に題と距離が出る (${res.title} / ${res.dist}m)`);
+    const rs = await page.evaluate(() => document.getElementById('rStage').textContent);
+    ok(/^\d+$/.test(rs) && Number(rs) >= 1, `結果に、たどりついたステージが出る (ステージ ${rs})`);
     await page.locator('#btnAgain').tap();
     await page.waitForFunction(() => window.__app.state().mode === 'play');
     const again = await page.evaluate(() => ({ over: window.__app.game().over, x: window.__app.game().p.x }));

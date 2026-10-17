@@ -17,6 +17,7 @@
 
 <div id="app">
   <div id="stage">
+    <div id="sky2"></div>
     <canvas id="cv"></canvas>
 
     <!-- あそんでいる間の表示 -->
@@ -24,6 +25,7 @@
       <div class="hud-left">
         <div class="hud-dist"><b id="hDist">0</b><small>m</small></div>
         <div class="hud-coin"><span class="coin-dot"></span><b id="hCoins">0</b></div>
+        <div class="hud-stage"><span id="hStage">ステージ 1</span><i><b id="hStageBar"></b></i></div>
       </div>
       <div class="hud-center">
         <div class="hud-gun"><span class="gi" id="hGunIcon">🔫</span><span class="gn" id="hGunName">ミズデッポウ</span></div>
@@ -32,6 +34,7 @@
       <button type="button" id="btnPause" class="hud-pause" aria-label="いちじていし"><span>Ⅱ</span></button>
       <div id="warn" aria-hidden="true"><span>!</span></div>
       <div id="toast" aria-live="polite"></div>
+      <div id="stageBanner" aria-hidden="true"><span class="sb-name" id="sbName">ステージ 2</span><span class="sb-sub" id="sbSub">ステージクリア!</span></div>
     </div>
 
     <!-- タイトル -->
@@ -52,7 +55,7 @@
           <span class="meta-chip">ベスト <b id="tBest">0</b>m</span>
           <button type="button" id="btnSound" class="meta-chip btn-chip" aria-label="おと"><span id="soundLabel">🔊 おと</span></button>
         </div>
-        <p class="how">うしろから追ってくる黒服から、屋上を走って逃げよう。<br>谷はジャンプ。とびらから<b>ビルの中</b>を抜ければ近道!</p>
+        <p class="how">うしろから追ってくる黒服から、屋上を走って逃げよう。<br>谷はジャンプ。とびらから<b>ビルの中</b>を抜ければ近道!<br><b>200m</b>ごとに次のステージ。ゴールは無いよ!</p>
       </div>
     </section>
 
@@ -74,10 +77,11 @@
         <div class="r-dist"><b id="rDist">0</b><small>m</small></div>
         <p id="rNew" class="r-new" hidden>🎉 ベストこうしん!</p>
         <div class="r-rows">
+          <div><span>ステージ</span><b id="rStage">1</b></div>
           <div><span>コイン</span><b id="rCoins">0</b></div>
           <div><span>やっつけた</span><b id="rKills">0</b></div>
-          <div><span>ベスト</span><b id="rBest">0</b></div>
         </div>
+        <p class="r-best">ベスト <b id="rBest">0</b>m</p>
         <div class="r-btns">
           <button type="button" id="btnAgain" class="big-btn pink small"><span class="bi">↻</span><span class="bl">もういちど</span></button>
           <button type="button" id="btnResultShop" class="big-btn blue small"><span class="bi">🔫</span><span class="bl">ぶきや</span></button>

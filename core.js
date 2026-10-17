@@ -53,6 +53,10 @@
   /** 走る速さ。進むほど少しずつ速くなる (200 → 260)。 */
   function speedAt(x) { return 200 + Math.min(60, Math.max(0, x) / 150); }
   function metersOf(x) { return Math.max(0, Math.floor(x / 40)); }
+  /** 200m ごとに 1 ステージ。終わりは無い。 */
+  const STAGE_LEN_M = 200;
+  function stageOf(x) { return 1 + Math.floor(metersOf(x) / STAGE_LEN_M); }
+  function stageClearBonus(stage) { return 10 + 5 * Math.min(stage, 20); }   // 抜けたステージの番号 (1 から)
 
   // ------------------------------------------------------------ 水でっぽう
   // cd: 連射の間隔(秒) / cost: 水の消費 / n: 一度に出る粒 / speed: 自分から見た速さ / range: 届く距離
@@ -399,6 +403,7 @@
       bombs: opts.bombs != null ? opts.bombs : 3,
       coins: 0,
       kills: 0,
+      stage: 1,
       enemies: [],
       shots: [],
       thrown: [],
@@ -1064,6 +1069,18 @@
       }
     }
 
+    // ステージクリア (200m ごと。止まらず、そのまま次へ進む)
+    const st = stageOf(p.x);
+    if (st > g.stage) {
+      const cleared = g.stage;
+      g.stage = st;
+      const bonus = stageClearBonus(cleared);
+      g.coins += bonus;
+      g.water = 100;
+      g.bombs = Math.min(9, g.bombs + 1);
+      emit(g, 'stage', p.x, p.y, { n: st, bonus: bonus });
+    }
+
     collect(g);
 
     // 武器
@@ -1124,7 +1141,7 @@
     // 乱数
     mulberry32: mulberry32, shuffle: shuffle,
     // 世界
-    speedAt: speedAt, metersOf: metersOf, reach: reach,
+    speedAt: speedAt, metersOf: metersOf, stageOf: stageOf, stageClearBonus: stageClearBonus, STAGE_LEN_M: STAGE_LEN_M, reach: reach,
     createWorld: createWorld, ensure: ensure, buildingAt: buildingAt, indexNear: indexNear,
     layerOf: layerOf, baseY: baseY, groundAt: groundAt,
     // 遊び

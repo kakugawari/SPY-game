@@ -386,3 +386,53 @@ test('ビルの中を抜けると、追ってくる敵とのきょりがひら�
   }
   assert.ok(better >= 9, `きょりがひらいた ${better}/12`);
 });
+
+test('ステージは 200m ごとに進み、終わりが無い (ボーナス・水・ばくだん・イベント)', () => {
+  assert.strictEqual(Core.stageOf(0), 1);
+  assert.strictEqual(Core.stageOf(40 * 199), 1);
+  assert.strictEqual(Core.stageOf(40 * 200), 2);
+  assert.strictEqual(Core.stageOf(40 * 2000), 11);
+  assert.strictEqual(Core.stageOf(40 * 200 * 1000), 1001);
+  const g = Core.newGame({ seed: 4, noEnemies: true });
+  const st = makeBot();
+  let events = [], coins0 = 0;
+  g.water = 10; g.bombs = 1;
+  // 1 ステージ目の終わり近くまで飛ばす
+  g.p.x = 40 * 199.5;
+  Core.ensure(g.world, g.p.x + 4000);
+  const b = Core.buildingAt(g.world, g.p.x) || g.world.b[Core.indexNear(g.world, g.p.x)];
+  g.p.x = b.x + 30; g.p.y = b.roofY; g.p.vy = 0;
+  // 世界は x に応じて作るので、200m のきわで自然に越えさせる: 位置を 200m の手前へ置き直す
+  g.p.x = Math.max(g.p.x, 40 * 198);
+  const bb = Core.buildingAt(g.world, g.p.x);
+  if (bb) g.p.y = bb.roofY;
+  coins0 = g.coins;
+  for (let i = 0; i < 60 * 40 && !g.over; i++) {
+    botStep(g, st, DT); Core.step(g, DT);
+    events = events.concat(g.events.filter((e) => e.t === 'stage')); g.events.length = 0;
+    if (g.stage >= 2 && events.length) break;
+  }
+  assert.strictEqual(g.over, null);
+  assert.strictEqual(g.stage, 2);
+  assert.strictEqual(events.length, 1, 'ステージのイベントは 1 回だけ');
+  assert.strictEqual(events[0].n, 2);
+  assert.strictEqual(events[0].bonus, Core.stageClearBonus(1));
+  assert.ok(g.coins - coins0 >= Core.stageClearBonus(1), 'ボーナスのコイン');
+  assert.ok(g.water > 90, `水がまんたん (${g.water})`);
+  assert.ok(g.bombs >= 2, `ばくだんが 1 つふえる (${g.bombs})`);
+});
+
+test('ステージを 5 つ続けて走っても、止まらず、1 つずつ進む (自動プレイ 8 通り)', () => {
+  for (let seed = 1; seed <= 8; seed++) {
+    const g = Core.newGame({ seed: seed, noEnemies: true });
+    const st = makeBot();
+    const seen = [];
+    for (let i = 0; i < 60 * 260 && !g.over && g.stage < 6; i++) {
+      botStep(g, st, DT); Core.step(g, DT);
+      for (const e of g.events) if (e.t === 'stage') seen.push(e.n);
+      g.events.length = 0;
+    }
+    assert.strictEqual(g.over, null, `seed ${seed}: ${g.over}`);
+    assert.deepStrictEqual(seen, [2, 3, 4, 5, 6], `seed ${seed}: ${seen}`);
+  }
+});

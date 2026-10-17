@@ -45,18 +45,77 @@
     { body: '#a6647f', dark: '#824d63', top: '#c986a1' }
   ];
 
+  // ------------------------------------------------------------ ステージの配色 (ステージは終わりなく続く。8 種類をめぐり、周回ごとに色相をずらす)
+  // h: ビルの色相 / sky: 空の 4 色 (上→下) / far: 遠い街の 2 色 / night: 夜 (星と月)
+  const THEMES = [
+    { name: 'ゆうやけ',   h: 262, sky: ['#6f62e8', '#b784e6', '#ff9fc4', '#ffd0a8'], far: ['#b79be0', '#8f7fcf'], sun: '#fff3c4', night: false, own: true },
+    { name: 'ひるま',     h: 205, sky: ['#3f9bff', '#86ccff', '#cdeeff', '#fff6d6'], far: ['#9fd0f0', '#7fb5e0'], sun: '#fffbe0', night: false },
+    { name: 'よぞら',     h: 248, sky: ['#14123d', '#2b2a7a', '#5b4bb0', '#b07ad0'], far: ['#3d3a8c', '#2b2a70'], sun: '#f4f1ff', night: true },
+    { name: 'あさやけ',   h: 335, sky: ['#7f8de8', '#c78bd6', '#ff8fa3', '#ffb27a'], far: ['#e8a0b8', '#c487b0'], sun: '#fff0c4', night: false },
+    { name: 'みどりの空', h: 165, sky: ['#2fb99a', '#8fe0c0', '#d4f5c4', '#fff5c0'], far: ['#8fd8b8', '#68bd9e'], sun: '#fffbd0', night: false },
+    { name: 'あかね',     h: 18,  sky: ['#6a3a9e', '#d9507a', '#ff9a5c', '#ffd36e'], far: ['#a0509a', '#7d3f8c'], sun: '#fff0b0', night: false },
+    { name: 'ネオン',     h: 300, sky: ['#0b0b2e', '#3a0f6a', '#a21caf', '#ff5ea0'], far: ['#4b1d7a', '#33135a'], sun: '#ffd1f0', night: true },
+    { name: 'こおり',     h: 208, sky: ['#7db8ff', '#bfe0ff', '#e6f4ff', '#ffffff'], far: ['#b5d2ec', '#97b9d6'], sun: '#ffffff', night: false }
+  ];
+  const palCache = {};
+
+  function themeOf(stage) {
+    const i = Math.max(0, stage - 1);
+    const t = THEMES[i % THEMES.length];
+    const loop = Math.floor(i / THEMES.length);
+    return { idx: i % THEMES.length, loop: loop, name: t.name, base: t, sky: t.sky, far: t.far, sun: t.sun, night: t.night };
+  }
+
+  function skyCss(theme) {
+    const s = theme.sky;
+    return 'linear-gradient(180deg, ' + s[0] + ' 0%, ' + s[1] + ' 38%, ' + s[2] + ' 72%, ' + s[3] + ' 100%)';
+  }
+
+  /** ビルの色。最初のステージだけ手で決めた色、あとは色相から作る (周回ごとに 40 度ずつずらす)。 */
+  function buildPal(theme, style) {
+    const key = theme.idx + ':' + theme.loop + ':' + style;
+    if (palCache[key]) return palCache[key];
+    let p;
+    if (theme.base.own && theme.loop === 0) {
+      p = BUILD[style % BUILD.length];
+    } else {
+      const off = [0, 28, -28, 56, -56][style % 5];
+      const hue = (theme.base.h + theme.loop * 40 + off + 360) % 360;
+      const sat = theme.night ? 34 : 38, L = theme.night ? 30 : 47;
+      p = {
+        body: 'hsl(' + hue + ',' + sat + '%,' + L + '%)',
+        dark: 'hsl(' + hue + ',' + (sat + 4) + '%,' + (L - 10) + '%)',
+        top: 'hsl(' + hue + ',' + (sat + 4) + '%,' + (L + 14) + '%)'
+      };
+    }
+    palCache[key] = p;
+    return p;
+  }
+
   // ------------------------------------------------------------ 背景 (画面に固定のもの・ゆっくり動くもの)
   function drawBackdrop(c, view) {
     const w = view.w, h = view.h;
-    // 太陽
+    const th = view.theme || themeOf(1);
+    // 星 (夜のステージ)
+    if (th.night) {
+      for (let i = 0; i < 46; i++) {
+        const x = ((hash(i, 21) * (w + 60) - view.camX * 0.03) % (w + 60) + (w + 60)) % (w + 60) - 30;
+        const y = hash(i, 22) * h * 0.62;
+        const tw = 0.5 + 0.5 * Math.sin(view.t * (1.2 + hash(i, 23)) + i);
+        c.globalAlpha = 0.35 + 0.55 * tw;
+        circle(c, x, y, 0.8 + hash(i, 24) * 1.3, '#fff');
+      }
+      c.globalAlpha = 1;
+    }
+    // 太陽・月
     const sx = w * 0.74, sy = h * 0.2;
     const glow = c.createRadialGradient(sx, sy, 6, sx, sy, 120);
-    glow.addColorStop(0, 'rgba(255,244,200,.95)');
-    glow.addColorStop(0.35, 'rgba(255,214,170,.5)');
+    glow.addColorStop(0, th.night ? 'rgba(220,215,255,.7)' : 'rgba(255,244,200,.95)');
+    glow.addColorStop(0.35, th.night ? 'rgba(170,160,255,.28)' : 'rgba(255,214,170,.5)');
     glow.addColorStop(1, 'rgba(255,190,200,0)');
     c.fillStyle = glow;
     c.fillRect(sx - 130, sy - 130, 260, 260);
-    circle(c, sx, sy, 34, '#fff3c4');
+    circle(c, sx, sy, 34, th.sun);
 
     // 雲
     for (let i = 0; i < 7; i++) {
@@ -65,7 +124,7 @@
       let x = ((hash(i, 2) * span * 2 - view.camX * par) % span + span) % span - 130;
       const y = h * (0.06 + hash(i, 3) * 0.34) - view.camY * 0.02;
       const s = 0.8 + hash(i, 4) * 0.9;
-      c.fillStyle = 'rgba(255,255,255,.55)';
+      c.fillStyle = th.night ? 'rgba(180,170,255,.18)' : 'rgba(255,255,255,.55)';
       c.beginPath();
       c.ellipse(x, y, 46 * s, 14 * s, 0, 0, TAU);
       c.ellipse(x - 26 * s, y + 4 * s, 30 * s, 11 * s, 0, 0, TAU);
@@ -75,8 +134,8 @@
 
     // 遠くの街
     const layers = [
-      { par: 0.12, col: '#b79be0', cell: 78, base: 0.86, hmin: 90, hmax: 240 },
-      { par: 0.26, col: '#8f7fcf', cell: 64, base: 0.93, hmin: 90, hmax: 260 }
+      { par: 0.12, col: th.far[0], cell: 78, base: 0.86, hmin: 90, hmax: 240 },
+      { par: 0.26, col: th.far[1], cell: 64, base: 0.93, hmin: 90, hmax: 260 }
     ];
     for (let li = 0; li < layers.length; li++) {
       const L = layers[li];
@@ -97,7 +156,7 @@
 
   // ------------------------------------------------------------ ビル
   function drawBuilding(c, g, b, view, t) {
-    const pal = BUILD[b.style % BUILD.length];
+    const pal = buildPal(themeOf(C.stageOf(b.x)), b.style);
     const x = b.x, w = b.w, top = b.roofY;
     const bottom = view.camY + view.h + 40;
     // 本体
@@ -893,6 +952,9 @@
     drawStar: drawStar,
     fxCount: function () { return fx.length; },
     spritesReady: spritesReady,
+    themeOf: themeOf,
+    skyCss: skyCss,
+    THEMES: THEMES,
     hash: hash
   };
 })();

@@ -615,3 +615,91 @@ test('stage イベントは地上かどうかを知らせる / 地上ステー�
   const onRoof = wantAt(40 * 402);     // ステージ 3 の初め (m=402 → 1 + 2 = 3)
   assert.strictEqual(onStreet, onRoof + 1, `地上 ${onStreet} / 屋上 ${onRoof}`);
 });
+
+// ------------------------------------------------------------ 乗り物 (スケボー・ラジコンカー)
+function streetGame(seed) {
+  const g = Core.newGame({ seed: seed, noEnemies: true });
+  Core.ensure(g.world, 8000 * 3);
+  const b = g.world.b.find((q) => q.ground);
+  return { g, b };
+}
+
+test('乗り物は地上の道にだけ出る (屋上には出ない)。両方の種類が出る', () => {
+  const kinds = new Set(); let onRoof = 0, onStreet = 0;
+  for (let seed = 1; seed <= 30; seed++) {
+    const g = Core.newGame({ seed: seed, noEnemies: true });
+    Core.ensure(g.world, 8000 * 7);
+    for (const b of g.world.b) {
+      for (const it of b.roof.items.concat(b.room.items)) {
+        if (!Core.RIDES[it.t]) continue;
+        if (b.ground) { onStreet++; kinds.add(it.t); } else onRoof++;
+        const obs = b.roof.obs.some((o) => Math.abs(o.x - it.x) < 60);
+        assert.ok(!obs, `seed ${seed}: 乗り物がじゃま物と重なる`);
+      }
+    }
+  }
+  assert.strictEqual(onRoof, 0);
+  assert.ok(onStreet > 20 && kinds.has('board') && kinds.has('toycar'), `地上 ${onStreet} / ${[...kinds]}`);
+});
+
+function giveRide(g, kind) {
+  g.p.ride = { k: kind, t: Core.RIDES[kind].sec };
+}
+
+test('乗ると速くなり、拾うと乗る。時間が切れると降りる', () => {
+  const { g, b } = streetGame(3);
+  g.p.x = b.x + 20; g.p.y = b.roofY; g.p.inside = -1;
+  b.roof.obs.length = 0; b.roof.items.length = 0;
+  b.roof.items.push({ x: b.x + 30, y: b.roofY - 22, t: 'toycar' });
+  let got = false;
+  for (let i = 0; i < 30; i++) { Core.step(g, DT); if (g.events.some((e) => e.t === 'ride')) got = true; g.events.length = 0; }
+  assert.ok(got && g.p.ride && g.p.ride.k === 'toycar', '拾って乗った');
+  assert.ok(Math.abs(g.p.vx / (Core.speedAt(g.p.x) * 1.5) - 1) < 0.01, `速さ ${g.p.vx}`);
+  let off = false;
+  for (let i = 0; i < 60 * 20 && !off; i++) { Core.step(g, DT); if (g.events.some((e) => e.t === 'unride')) off = true; g.events.length = 0; }
+  assert.ok(off && !g.p.ride, '降りた');
+});
+
+test('スケボーは、ぶつかると降りてつまずく。ラジコンカーは、車ごとはね飛ばして走りぬける', () => {
+  for (const [kind, smash] of [['board', false], ['toycar', true]]) {
+    const { g, b } = streetGame(5);
+    g.p.x = b.x + 40; g.p.y = b.roofY; g.p.inside = -1;
+    b.roof.items.length = 0; b.roof.obs.length = 0; b.roof.obs.push({ x: b.x + 140, t: 'car' });
+    giveRide(g, kind);
+    const seen = new Set();
+    for (let i = 0; i < 90; i++) { Core.step(g, DT); g.events.forEach((e) => seen.add(e.t)); g.events.length = 0; }
+    if (smash) {
+      assert.ok(seen.has('smash') && !seen.has('trip') && g.p.ride, `はね飛ばした ${[...seen]}`);
+      assert.strictEqual(b.roof.obs.length, 0, '車が消えた');
+    } else {
+      assert.ok(seen.has('trip') && seen.has('unride') && !g.p.ride, `つまずいて降りた ${[...seen]}`);
+    }
+  }
+});
+
+test('乗ったまま地上の道を出ない: 道の終わりの手前で降りる。撃つ弾は乗った高さから出る', () => {
+  const g = Core.newGame({ seed: 9, noEnemies: true });
+  Core.ensure(g.world, 8000 * 3);
+  const b = g.world.b.filter((q) => q.ground && stageOf(q.x) === 2).pop();
+  function stageOf(x) { return Core.stageOf(x); }
+  g.p.x = b.x + b.w - 400; g.p.y = b.roofY; g.p.inside = -1; g.stage = 2;
+  b.roof.obs.length = 0;
+  giveRide(g, 'board'); g.p.ride.t = 99;
+  let offAt = null;
+  for (let i = 0; i < 60 * 5 && offAt == null; i++) {
+    Core.step(g, DT);
+    if (g.events.some((e) => e.t === 'unride')) offAt = g.p.x;
+    g.events.length = 0;
+  }
+  assert.ok(offAt != null && offAt < b.x + b.w - 100, `降りた x=${offAt} / 道の終わり ${b.x + b.w}`);
+  const muzzle = (ride) => {
+    const { g: h, b: sb } = streetGame(2);
+    h.p.x = sb.x + 60; h.p.y = sb.roofY; h.p.inside = -1;
+    sb.roof.obs.length = 0;
+    if (ride) giveRide(h, 'toycar');
+    Core.input(h, 'fire', true); Core.step(h, DT);
+    return h.shots[0] ? h.shots[0].y - sb.roofY : null;
+  };
+  const y0 = muzzle(false), y1 = muzzle(true);
+  assert.ok(y0 != null && y1 != null && y0 - y1 > 10, `銃口 ${y0} → ${y1}`);
+});

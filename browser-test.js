@@ -665,6 +665,62 @@ async function run() {
     ok(lo === 0, `低い段差のおりでは、ロールしない (${lo} 回)`);
     await ctx.close();
 
+    // ------------------------------------------------------------ 地上の乗り物
+    section('スケボー・ラジコンカー (地上ステージ)');
+    ({ ctx, page } = await freshPage(browser));
+    page.on('pageerror', (e) => errors.push('乗り物: ' + e.message));
+    await page.evaluate(() => window.__app.start({ seed: 11, noEnemies: true }));
+    await sleep(300);
+    const setStreet = (kind, obs) => page.evaluate(({ kind, obs }) => {
+      const g = window.__app.game(), C = window.Core;
+      C.ensure(g.world, 8000 * 3);
+      const b = g.world.b.find((q) => q.ground);
+      g.stage = 2; g.p.ride = null;
+      g.p.x = b.x + 40; g.p.y = b.roofY; g.p.vy = 0; g.p.inside = -1; g.p.stun = 0; g.p.inv = 0; g.p.onGround = true;
+      b.roof.items.length = 0; b.roof.obs.length = 0;
+      b.roof.items.push({ x: b.x + 90, y: b.roofY - 22, t: kind });
+      if (obs) b.roof.obs.push({ x: b.x + 330, t: obs });
+      return b.x;
+    }, { kind, obs });
+    // ひろうと乗る (スケボー)。ちゅうは、ぶつかると降りる
+    await page.evaluate(() => { window.__toasts = []; new MutationObserver(() => window.__toasts.push(document.getElementById('toast').textContent)).observe(document.getElementById('toast'), { childList: true, characterData: true, subtree: true }); });
+    await setStreet('board', 'bin');
+    await sleep(400);
+    const rb = await page.evaluate(() => { const g = window.__app.game(); return { ride: g.p.ride && g.p.ride.k, vx: g.p.vx, base: window.Core.speedAt(g.p.x) }; });
+    ok(rb.ride === 'board' && rb.vx > rb.base * 1.25, `スケボーを拾うと乗って、速くなる (${rb.ride} / ${Math.round(rb.vx)} ← ${Math.round(rb.base)})`);
+    const toastTxt = (await page.evaluate(() => window.__toasts)).join(' | ');
+    ok(/スケボー/.test(toastTxt), `乗ったことが画面に出る (${toastTxt.replace(/\n/g, ' ')})`);
+    await sleep(900);
+    const rb2 = await page.evaluate(() => { const g = window.__app.game(); return { ride: g.p.ride, stun: g.p.stun, over: g.over }; });
+    ok(!rb2.ride, `スケボーは、じゃま物にぶつかると降りる (のこり ${JSON.stringify(rb2.ride)})`);
+    // ラジコンカー: ぶつかったじゃま物をはね飛ばす。車の絵が出る (ボディの黄色い画素)
+    await setStreet('toycar', 'bench');
+    await sleep(300);
+    const px = () => page.evaluate(() => {
+      const cv = document.getElementById('cv'), c = cv.getContext('2d');
+      const d = c.getImageData(0, 0, cv.width, cv.height).data;
+      let n = 0;
+      for (let i = 0; i < d.length; i += 4) if (Math.abs(d[i] - 255) < 8 && Math.abs(d[i + 1] - 183) < 10 && d[i + 2] < 40) n++;
+      return n;
+    });
+    const withCar = await px();
+    await sleep(900);
+    const rc = await page.evaluate(() => { const g = window.__app.game(); return { ride: g.p.ride && g.p.ride.k, obs: g.world.b.find((q) => q.ground).roof.obs.length, over: g.over }; });
+    ok(rc.ride === 'toycar' && rc.obs === 0 && !rc.over, `ラジコンカーはベンチをはね飛ばして、乗ったまま走る (${rc.ride} / のこりじゃま物 ${rc.obs})`);
+    ok(withCar > 150, `ラジコンカーの絵が出る (黄色い画素 ${withCar})`);
+    // 地上の道を出る前に降りる
+    const off = await page.evaluate(async () => {
+      const g = window.__app.game(), C = window.Core;
+      const b = g.world.b.filter((q) => q.ground && C.stageOf(q.x) === 2).pop();
+      g.p.x = b.x + b.w - 360; g.p.y = b.roofY; g.p.ride = { k: 'board', t: 99 };
+      b.roof.obs.length = 0; b.roof.items.length = 0;
+      const t0 = performance.now();
+      while (g.p.ride && performance.now() - t0 < 3000) await new Promise((r) => setTimeout(r, 30));
+      return { ride: !!g.p.ride, left: Math.round(b.x + b.w - g.p.x) };
+    });
+    ok(!off.ride && off.left > 60, `道の終わりの手前で降りる (終わりまであと ${off.left}px)`);
+    await ctx.close();
+
     // ------------------------------------------------------------ いちじていし
     section('いちじていし・アプリを切りかえたとき');
     ({ ctx, page } = await freshPage(browser));

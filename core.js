@@ -133,6 +133,11 @@
   };
   const OBS_KEYS = Object.keys(OBSTACLES);
   const ROOF_OBS = ['cone', 'box', 'vent'];
+  /** 地上で乗れる物。speed = はやさの倍率 / smash = ぶつかった物をはね飛ばす (スケボーは、ぶつかるところんで降りる) / sec = 乗っていられる時間 */
+  const RIDES = {
+    board:  { name: 'スケボー',     icon: '🛹', speed: 1.3, smash: false, sec: 14, lift: 8 },
+    toycar: { name: 'ラジコンカー', icon: '🚙', speed: 1.5, smash: true,  sec: 10, lift: 15 }
+  };
   const GROUND_OBS = ['cone', 'box', 'bin', 'hydrant', 'bench', 'car', 'car'];
 
   // ------------------------------------------------------------ 敵
@@ -240,6 +245,17 @@
           const px = Math.round(b.x + 60 + r() * Math.max(10, b.w - 140));
           if (!far(px, b.roof.obs, 45) || !far(px, b.roof.props, 30) || !far(px, b.roof.items, 30)) continue;
           b.roof.items.push({ x: px, y: b.roofY - 24, t: pickSpecial(r) });
+          break;
+        }
+      }
+    }
+    // 乗り物 (スケボー・ラジコンカー): 600px につき 7 割の確率で 1 つ。出口の近くには置かない (降りる時間がいる)
+    for (let k = 0; k < Math.floor(b.w / 600); k++) {
+      if (r() < 0.7) {
+        for (let tries = 0; tries < 8; tries++) {
+          const px = Math.round(b.x + 60 + r() * Math.max(10, b.w - 260));
+          if (!far(px, b.roof.obs, 60) || !far(px, b.roof.props, 40) || !far(px, b.roof.items, 40)) continue;
+          b.roof.items.push({ x: px, y: b.roofY - 22, t: r() < 0.6 ? 'board' : 'toycar' });
           break;
         }
       }
@@ -484,7 +500,7 @@
       events: [],
       p: {
         x: 0, y: world.b[0].roofY, vx: 0, vy: 0, hw: PLAYER_HW, h: PLAYER_H,
-        onGround: true, ground: 0.1, inside: -1, stun: 0, inv: 0, carry: null, cd: 0,
+        onGround: true, ground: 0.1, inside: -1, stun: 0, inv: 0, carry: null, ride: null, cd: 0,
         anim: 0, jumping: false, blocked: false, hold: 0, charge: 0, gunPrev: null
       },
       in: { jumpHeld: false, fireHeld: false, jumpBuf: 0, doorBuf: 0, grabBuf: 0, bombBuf: 0 },
@@ -819,7 +835,7 @@
     const p = g.p;
     const gun = curGun(g);
     const sx = p.x - 28;            // 後ろへ向けたカメラ型の水でっぽうの先
-    const sy = p.y - 34;
+    const sy = p.y - 34 - rideLift(p);
     const tgt = nearestBehind(g, 520);
     let a = 0;
     if (tgt) {
@@ -954,7 +970,7 @@
   // ------------------------------------------------------------ 水爆弾・投げ物
   function throwBomb(g) {
     const p = g.p;
-    const sx = p.x - 4, sy = p.y - 36;
+    const sx = p.x - 4, sy = p.y - 36 - rideLift(p);
     const v = aimLob(g, sx, sy);
     g.thrown.push({ kind: 'bomb', t: 'bomb', x: sx, y: sy, vx: v.vx, vy: v.vy, inside: p.inside, state: 'air', life: 0, rot: 0, hits: [] });
     g.bombs--;
@@ -989,7 +1005,7 @@
   function grabOrThrow(g) {
     const p = g.p;
     if (p.carry) {
-      const sx = p.x - 4, sy = p.y - 60;
+      const sx = p.x - 4, sy = p.y - 60 - rideLift(p);
       const v = aimLob(g, sx, sy);
       g.thrown.push({ kind: 'prop', t: p.carry, x: sx, y: sy, vx: v.vx, vy: v.vy, inside: p.inside, state: 'air', life: 0, rot: 0, hits: [] });
       emit(g, 'throw', sx, sy, { kind: 'prop', k: p.carry });
@@ -1100,13 +1116,39 @@
           const O = OBSTACLES[ob.t];
           const top = baseY(b, p.inside) - O.h;
           if (Math.abs(ob.x - p.x) < O.w / 2 + p.hw - 2 && p.y > top + 6 && p.y - p.h < baseY(b, p.inside)) {
+            if (p.ride && RIDES[p.ride.k].smash) {                  // ラジコンカーは、ぶつかった物をはね飛ばして走りぬける
+              L.obs.splice(L.obs.indexOf(ob), 1);
+              g.coins += 2;
+              emit(g, 'smash', ob.x, baseY(b, p.inside), { k: ob.t });
+              break;
+            }
             p.stun = 0.45; p.inv = 0.8; p.x -= 6;
             emit(g, 'trip', p.x, p.y, { k: ob.t });
+            if (p.ride) endRide(g, 'crash');
             break;
           }
         }
       }
     }
+  }
+
+  function rideLift(p) { return p.ride ? RIDES[p.ride.k].lift : 0; }
+
+  function endRide(g, why) {
+    const p = g.p;
+    if (!p.ride) return;
+    emit(g, 'unride', p.x, p.y, { k: p.ride.k, why: why });
+    p.ride = null;
+  }
+
+  /** 乗っているあいだの時間と、降りる条件 (時間切れ・地上の道の終わりが近い・屋内)。 */
+  function stepRide(g, dt) {
+    const p = g.p;
+    if (!p.ride) return;
+    p.ride.t -= dt;
+    if (p.ride.t <= 0) { endRide(g, 'time'); return; }
+    const w = g.world, j = indexNear(w, p.x), b = w.b[j], nb = w.b[j + 1];
+    if (p.inside >= 0 || !b || !b.ground || (nb && !nb.ground && p.x > b.x + b.w - 160)) endRide(g, 'exit');
   }
 
   function takeItem(g, it) {
@@ -1120,6 +1162,9 @@
     } else if (it.t === 'bomb') {
       g.bombs = Math.min(9, g.bombs + 1);
       emit(g, 'item', it.x, it.y, { k: 'bomb' });
+    } else if (RIDES[it.t]) {
+      p.ride = { k: it.t, t: RIDES[it.t].sec };
+      emit(g, 'ride', it.x, it.y, { k: it.t });
     } else if (it.t === 'gift') {
       const have = g.guns;
       const left = GUNS.filter((gu) => have.indexOf(gu.id) < 0);
@@ -1168,7 +1213,8 @@
     }
 
     // 走る・跳ぶ
-    p.vx = p.stun > 0 ? 0 : speedAt(p.x);
+    stepRide(g, dt);
+    p.vx = p.stun > 0 ? 0 : speedAt(p.x) * (p.ride ? RIDES[p.ride.k].speed : 1);
     if (p.onGround) p.ground = 0.1; else p.ground -= dt;
     if (I.jumpBuf > 0 && p.ground > 0 && p.stun <= 0) {
       p.vy = -JUMP_V; p.ground = 0; p.onGround = false; p.jumping = true; I.jumpBuf = 0;
@@ -1277,7 +1323,7 @@
     // 定数
     G: G, JUMP_V: JUMP_V, CUT_V: CUT_V, KILL_Y: KILL_Y, FLOOR_OFF: FLOOR_OFF, THROW_G: THROW_G,
     PLAYER_HW: PLAYER_HW, PLAYER_H: PLAYER_H,
-    GUNS: GUNS, GUN_BY_ID: GUN_BY_ID, PROPS: PROPS, OBSTACLES: OBSTACLES, ENEMIES: ENEMIES,
+    GUNS: GUNS, GUN_BY_ID: GUN_BY_ID, PROPS: PROPS, RIDES: RIDES, OBSTACLES: OBSTACLES, ENEMIES: ENEMIES,
     // 乱数
     mulberry32: mulberry32, shuffle: shuffle,
     // 世界

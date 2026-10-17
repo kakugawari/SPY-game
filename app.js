@@ -121,6 +121,9 @@
         case 'item': tone(660, 990, 0.12, 'triangle', 0.16); tone(990, 1320, 0.14, 'triangle', 0.16, 0.1); break;
         case 'gift': [523, 659, 784, 1047].forEach((f, i) => tone(f, f, 0.14, 'triangle', 0.18, i * 0.08)); break;
         case 'trip': tone(220, 90, 0.22, 'sawtooth', 0.16); break;
+        case 'ride': tone(400, 800, 0.1, 'square', 0.1); tone(600, 1200, 0.14, 'square', 0.1, 0.09); break;
+        case 'unride': tone(500, 200, 0.2, 'triangle', 0.12); break;
+        case 'smash': noise(0.22, 0.45, 900, 0.6); tone(260, 90, 0.16, 'square', 0.14); break;
         case 'caught': tone(520, 130, 0.6, 'sawtooth', 0.22); noise(0.3, 0.3, 500, 0.5); break;
         case 'fell': tone(700, 90, 0.9, 'triangle', 0.22); break;
         case 'door': tone(180, 140, 0.18, 'square', 0.08); tone(300, 380, 0.12, 'triangle', 0.1, 0.1); break;
@@ -152,6 +155,9 @@
         case 'item': play('item'); break;
         case 'gift': play('gift'); break;
         case 'trip': play('trip'); break;
+        case 'ride': play('ride'); break;
+        case 'unride': play('unride'); break;
+        case 'smash': play('smash'); break;
         case 'caught': play('caught'); break;
         case 'fell': play('fell'); break;
         case 'enter': case 'exit': play('door'); break;
@@ -634,7 +640,10 @@
         case 'dry': toast('水ぎれ! タンク💧をひろおう', 1400); break;
         case 'nope': if (g.bombs <= 0) toast('水ばくだんが ないよ', 1200); break;
         case 'trip': app.shake = Math.max(app.shake, 0.15); break;
-        case 'stage': showStageBanner(ev.n, ev.bonus, ev.ground); applySky(ev.n, false); if (ev.ground) tip('ground', 'ちじょうは谷が無いよ。車は長おしの高いジャンプ!'); break;
+        case 'ride': toast(C.RIDES[ev.k].icon + ' ' + C.RIDES[ev.k].name + '! はやいよ' + (C.RIDES[ev.k].smash ? '\nじゃま物は ぜんぶ はね飛ばす!' : '\nぶつかると おりちゃう'), 1800); break;
+        case 'unride': if (ev.why === 'time') toast('おりた', 900); break;
+        case 'smash': app.shake = Math.max(app.shake, 0.2); break;
+        case 'stage': showStageBanner(ev.n, ev.bonus, ev.ground); applySky(ev.n, false); if (ev.ground) tip('ground', 'ちじょうは谷が無いよ。車は長おしの高いジャンプ!\n🛹スケボーや🚙ラジコンカーに乗れるよ'); break;
         default: break;
       }
     }
@@ -706,6 +715,10 @@
     }
     if (!g) return;
     A.updateFx(d);
+    if (g.p.ride && g.p.onGround && app.mode === 'play' && !app.over) {
+      app.ridePuffT = (app.ridePuffT || 0) - d;
+      if (app.ridePuffT <= 0) { app.ridePuffT = 0.06; A.handleEvent({ t: 'ridePuff', x: g.p.x, y: g.p.y }); }
+    }
 
     // 描く
     resize();

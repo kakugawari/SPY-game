@@ -484,6 +484,13 @@
       c.fillStyle = 'rgba(255,255,255,.7)'; c.beginPath(); c.ellipse(x - 3.5, y + 1, 2.2, 4.5, 0.3, 0, TAU); c.fill();
     } else if (it.t === 'bomb') {
       drawBomb(c, x, y + 1, 0, t);
+    } else if (it.t === 'board' || it.t === 'toycar') {
+      const gr = c.createRadialGradient(x, y, 2, x, y, 26);
+      gr.addColorStop(0, 'rgba(255,240,140,.55)'); gr.addColorStop(1, 'rgba(255,240,140,0)');
+      c.fillStyle = gr; c.fillRect(x - 26, y - 26, 52, 52);
+      c.save(); c.translate(x, y + 8); c.scale(1.3, 1.3);
+      drawRide(c, it.t, 0, 0, t, 0);
+      c.restore();
     } else if (it.t === 'gift') {
       const gr = c.createRadialGradient(x, y, 2, x, y, 24);
       gr.addColorStop(0, 'rgba(255,170,220,.55)'); gr.addColorStop(1, 'rgba(255,170,220,0)');
@@ -493,6 +500,39 @@
       c.fillStyle = '#ffe66d'; c.fillRect(x - 2, y - 12, 4, 22);
       c.beginPath(); c.arc(x - 4, y - 14, 4, 0, TAU); c.arc(x + 4, y - 14, 4, 0, TAU); c.strokeStyle = '#ffe66d'; c.lineWidth = 2; c.stroke();
     }
+  }
+
+  // ------------------------------------------------------------ 乗り物 (足もと (x, y) に描く。主人公はこの上に乗る)
+  function drawRide(c, kind, x, y, t, spd) {
+    c.save(); c.translate(x, y);
+    if (kind === 'board') {
+      c.fillStyle = 'rgba(0,0,0,.2)'; c.beginPath(); c.ellipse(0, 0, 22, 3, 0, 0, TAU); c.fill();
+      const wob = spd ? Math.sin(t * 28) * 0.012 : 0;
+      c.rotate(wob);
+      c.fillStyle = '#ff5d7a'; rr(c, -21, -8, 42, 5, 2.5); c.fill();                    // 板
+      c.fillStyle = '#ffd1dc'; rr(c, -17, -7.5, 34, 1.6, 0.8); c.fill();
+      c.fillStyle = '#fff2a8'; c.beginPath(); c.arc(-21, -9.5, 2.6, Math.PI * 0.9, Math.PI * 1.9); c.fill();   // 反り
+      c.beginPath(); c.arc(21, -9.5, 2.6, Math.PI * 1.1, Math.PI * 2.1); c.fill();
+      for (const wx of [-13, 13]) {                                                      // タイヤ
+        circle(c, wx, -2.6, 3.2, '#33305c'); circle(c, wx, -2.6, 1.3, '#fff2a8');
+      }
+    } else {
+      c.fillStyle = 'rgba(0,0,0,.22)'; c.beginPath(); c.ellipse(0, 0, 30, 4, 0, 0, TAU); c.fill();
+      const bounce = spd ? Math.abs(Math.sin(t * 22)) * 0.8 : 0;
+      c.translate(0, -bounce);
+      c.fillStyle = '#ffb703'; rr(c, -28, -17, 56, 10, 4); c.fill();                    // ボディ
+      c.fillStyle = '#ffd24d'; rr(c, -17, -23, 28, 9, 4); c.fill();                      // 屋根
+      c.fillStyle = '#9be7ff'; rr(c, -14, -22, 9, 6, 2); c.fill(); rr(c, -3, -22, 11, 6, 2); c.fill();
+      c.fillStyle = '#ff5d7a'; c.fillRect(-28, -14, 56, 2.2);
+      circle(c, 26, -12, 2.4, '#fffbe0'); circle(c, -27, -12, 2, '#ff6b6b');
+      c.strokeStyle = '#ccc'; c.lineWidth = 1.2; c.beginPath(); c.moveTo(-22, -23); c.lineTo(-26, -34); c.stroke();   // アンテナ
+      circle(c, -26, -34.5, 1.8, '#ff6b6b');
+      for (const wx of [-17, 17]) {
+        circle(c, wx, -6, 6.4, '#2a2745'); circle(c, wx, -6, 3, '#d9d6f0');
+        c.save(); c.translate(wx, -6); c.rotate(t * 30); c.fillStyle = '#8f8ab8'; c.fillRect(-0.8, -3, 1.6, 6); c.restore();
+      }
+    }
+    c.restore();
   }
 
   // ------------------------------------------------------------ 主人公
@@ -1017,6 +1057,22 @@
       case 'roll':
         for (let i = 0; i < 6; i++) addFx({ k: 'puff', x: ev.x - Math.random() * 30, y: ev.y - 2, vx: -40 - Math.random() * 80, vy: -Math.random() * 25, r: 4 + Math.random() * 4, life: 0.45, max: 0.45 });
         break;
+      case 'ride':
+        for (let i = 0; i < 10; i++) addFx({ k: 'spark', x: ev.x, y: ev.y, vx: (Math.random() - 0.5) * 240, vy: (Math.random() - 0.8) * 240, life: 0.5, max: 0.5, col: '#fff2a8' });
+        addFx({ k: 'text', x: ev.x, y: ev.y - 56, vy: -50, txt: ev.k === 'toycar' ? 'ブーン!' : 'スイー!', col: '#ffe66d', life: 0.8, size: 16 });
+        break;
+      case 'unride':
+        for (let i = 0; i < 6; i++) addFx({ k: 'puff', x: ev.x - Math.random() * 20, y: ev.y - 4, vx: -30 - Math.random() * 70, vy: -Math.random() * 40, r: 4 + Math.random() * 4, life: 0.4, max: 0.4 });
+        break;
+      case 'ridePuff':
+        addFx({ k: 'puff', x: ev.x - 20, y: ev.y - 3, vx: -60 - Math.random() * 40, vy: -Math.random() * 20, r: 2.5 + Math.random() * 2.5, life: 0.3, max: 0.3 });
+        break;
+      case 'smash': {
+        const cols = { cone: '#ff8a3d', box: '#c9a066', bin: '#8fa3b5', hydrant: '#ff5d5d', bench: '#b07a4a', car: '#7ec8ff', vent: '#aab' };
+        for (let i = 0; i < 9; i++) addFx({ k: 'spark', x: ev.x, y: ev.y - 14, vx: (Math.random() - 0.2) * 340, vy: -80 - Math.random() * 260, life: 0.6, max: 0.6, col: cols[ev.k] || '#fff' });
+        addFx({ k: 'text', x: ev.x, y: ev.y - 40, vy: -50, txt: 'ドカーン!', col: '#fff', life: 0.6, size: 15 });
+        break;
+      }
       case 'trip':
         addFx({ k: 'text', x: ev.x, y: ev.y - 52, vy: -40, txt: 'あいた!', col: '#ffd1e0', life: 0.7, size: 14 });
         for (let i = 0; i < 3; i++) drawStarFx(ev.x, ev.y - 46);
@@ -1172,8 +1228,15 @@
 
     // 主人公
     const gun = C.curGun(g);
+    const rd = p.ride;
+    if (rd) {
+      drawRide(c, rd.k, p.x, p.y, t, p.stun > 0 ? 0 : 1);
+      const u = Math.max(0, Math.min(1, rd.t / C.RIDES[rd.k].sec));          // のこり時間の細い線
+      c.fillStyle = 'rgba(0,0,0,.28)'; c.fillRect(p.x - 16, p.y + 5, 32, 3);
+      c.fillStyle = rd.t < 3 && Math.floor(t * 8) % 2 ? '#ff6b6b' : '#ffe66d'; c.fillRect(p.x - 16, p.y + 5, 32 * u, 3);
+    }
     drawSpy(c, {
-      x: p.x, y: p.y, phase: p.anim, air: !p.onGround, inv: p.inv, stun: p.stun, t: t,
+      x: p.x, y: p.y - (rd ? C.RIDES[rd.k].lift : 0), phase: rd ? 0 : p.anim, air: !p.onGround, inv: p.inv, stun: p.stun, t: t,
       carry: p.carry, aim: view.aim || 0, shoot: view.shoot || 0, firing: (view.fireT || 0) > 0, vy: p.vy, spin: view.spin || 0, squash: view.squash || 1, gunId: gun.id, gunColor: gun.color
     });
     if (p.carry) drawProp(c, p.carry, p.x + 3, p.y - 62, Math.sin(t * 10) * 0.06);

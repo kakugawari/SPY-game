@@ -1,12 +1,13 @@
 {
-  "name": "app-template",
+  "name": "spy-mint",
   "version": "1.0.0",
-  "description": "ビルドなしで動くアプリの雛形 (進め方のルールつき)",
+  "description": "かわいいスパイが、水でっぽうと水ばくだんで追っ手から逃げる屋上アクション (ビルドなしで動く)",
   "private": true,
   "scripts": {
     "start": "node serve.js",
     "test": "node --test *.test.js",
-    "test:ui": "node browser-test.js"
+    "test:ui": "node browser-test.js",
+    "bundle": "node bundle.js"
   },
   "license": "MIT"
 }

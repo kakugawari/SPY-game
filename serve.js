@@ -1,4 +1,4 @@
-/* 開発用のかんたんな静的サーバー: node scripts/serve.js [port] */
+/* 開発用のかんたんな静的サーバー: node serve.js [port] */
 const http = require('node:http');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -40,5 +40,5 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`しきつめパズル: http://localhost:${PORT}/`);
+  console.log(`スパイ・ミント: http://localhost:${PORT}/`);
 });

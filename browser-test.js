@@ -1,13 +1,11 @@
 /*
  * ブラウザで実際に動かして確かめるテスト。
  *
- *   npm i -D playwright && npm run test:ui
+ *   npm i -D playwright && npm run test:ui      (全域に入っていれば NODE_PATH=$(npm root -g) でもよい)
  *
  * 画面まわりの不具合は node のテストでは捕まらない。ここでは本物の
- * ブラウザを立ち上げ、指の操作をそのまま再現して確かめる。
- *
- * ★ アプリを作ったら「ここにアプリごとの確認を足す」に書き足すこと。
- *   直した不具合には、かならず見張り役をここに置く。
+ * ブラウザを立ち上げ、指の操作 (タップ・押しっぱなし・同時押し) を再現して確かめる。
+ * 対象の端末は iPhone 16 Plus (430 x 932) だけ。
  */
 const { spawn } = require('node:child_process');
 const path = require('node:path');
@@ -54,143 +52,508 @@ function waitForServer() {
   });
 }
 
-/**
- * 何かした直後に、その要素が本来の場所からどれだけずれるかを
- * 1 フレームずつ測る。「置いた瞬間に一瞬とぶ」たぐいの不具合はこれで見つかる。
- *
- * @returns {Promise<number>} 最大のずれ (px)
- */
-function measureJump(page, selector, act) {
-  return page.evaluate(async ({ sel, code }) => {
-    const before = document.querySelector(sel).getBoundingClientRect();
-    // eslint-disable-next-line no-new-func
-    new Function(code)();
-    let worst = 0;
-    for (let i = 0; i < 12; i++) {
-      await new Promise((r) => requestAnimationFrame(r));
-      const el = document.querySelector(sel);
-      if (!el) { worst = Infinity; break; }
-      const now = el.getBoundingClientRect();
-      worst = Math.max(worst, Math.abs(now.left - before.left), Math.abs(now.top - before.top));
-    }
-    return Math.round(worst);
-  }, { sel: selector, code: act });
+// iPhone 16 Plus: 430 x 932 (3x)。playwright が端末名を知らなくても動くよう、値で持つ。
+const PHONE = {
+  viewport: { width: 430, height: 932 },
+  deviceScaleFactor: 3,
+  isMobile: true,
+  hasTouch: true
+};
+
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+/** ページの中で、谷・じゃま物をよけて自動で走らせる (人のかわり)。 */
+async function installBot(page) {
+  await page.evaluate(() => {
+    if (window.__botInstalled) return;
+    window.__botInstalled = true;
+    window.__bot = { until: null, air: false };
+    window.__auto = false;
+    setInterval(() => {
+      const g = window.__app && window.__app.game();
+      if (!window.__auto || !g || g.over) return;
+      const st = window.__bot, C = window.Core, p = g.p;
+      if (st.air) {
+        if (p.onGround) { st.air = false; st.until = null; C.input(g, 'jump', false); }
+        else if (p.x >= st.until) { C.input(g, 'jump', false); return; }
+        else return;
+      }
+      if (st.until == null) { const plan = C.jumpPlan(g, p, C.speedAt(p.x)); if (plan) st.until = plan.until; }
+      if (st.until != null) { C.input(g, 'jump', true); st.air = true; }
+    }, 8);
+  });
+}
+
+async function freshPage(browser, extra) {
+  const ctx = await browser.newContext(Object.assign({}, PHONE, extra || {}));
+  const page = await ctx.newPage();
+  const errors = [];
+  page.on('pageerror', (e) => errors.push(e.message));
+  page.on('console', (m) => { if (m.type() === 'error') errors.push(m.text()); });
+  await page.goto(URL);
+  await page.waitForFunction(() => window.__app);
+  return { ctx, page, errors };
+}
+
+/** 画面のボタンの中心 (css px)。 */
+async function center(page, sel) {
+  return page.evaluate((s) => {
+    const r = document.querySelector(s).getBoundingClientRect();
+    return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+  }, sel);
+}
+
+/** CDP で本物のタッチを送る (複数の指を同時に押しっぱなしにできる)。 */
+function touchTool(cdp) {
+  const down = new Map();
+  const send = (type) => cdp.send('Input.dispatchTouchEvent', {
+    type, touchPoints: [...down.entries()].map(([id, p]) => ({ id, x: p.x, y: p.y }))
+  });
+  return {
+    async start(id, x, y) { down.set(id, { x, y }); await send('touchStart'); },
+    async move(id, x, y) { down.set(id, { x, y }); await send('touchMove'); },
+    async end(id) { down.delete(id); await send('touchEnd'); }
+  };
 }
 
 async function run() {
   let chromium;
-  let devices;
   try {
-    ({ chromium, devices } = require('playwright'));
+    ({ chromium } = require('playwright'));
   } catch (e) {
-    console.error('playwright が必要です:  npm i -D playwright');
+    console.error('playwright が必要です:  npm i -D playwright  (または NODE_PATH=$(npm root -g))');
     process.exit(1);
   }
 
-  const server = spawn(process.execPath, [path.join(ROOT, 'serve.js'), String(PORT)], {
-    stdio: 'ignore'
-  });
+  const server = spawn(process.execPath, [path.join(ROOT, 'serve.js'), String(PORT)], { stdio: 'ignore' });
   await waitForServer();
 
   const browser = await chromium.launch(CHROMIUM ? { executablePath: CHROMIUM } : {});
   const errors = [];
 
   try {
-    // ------------------------------------------------ スマホで開く
-    section('スマホで開く');
-    const context = await browser.newContext({ ...devices['iPhone 13'] });
-    const phone = await context.newPage();
-    phone.on('pageerror', (e) => errors.push('スマホ: ' + e.message));
-    phone.on('console', (m) => { if (m.type() === 'error') errors.push('スマホ: ' + m.text()); });
-    await phone.goto(URL);
-    await phone.waitForFunction(() => window.__app);
+    // ------------------------------------------------------------ 開く
+    section('スマホで開く (430 x 932)');
+    let { ctx, page, errors: errs } = await freshPage(browser);
+    errs.forEach((e) => errors.push(e));
+    page.on('pageerror', (e) => errors.push('スマホ: ' + e.message));
+    page.on('console', (m) => { if (m.type() === 'error') errors.push('スマホ: ' + m.text()); });
     ok(true, 'ページが開いて、画面のしくみが立ち上がる');
+    await sleep(600);
 
-    const fit = await phone.evaluate(() => ({
+    const fit = await page.evaluate(() => ({
       wide: document.documentElement.scrollWidth - document.documentElement.clientWidth,
-      title: document.querySelector('h1') ? document.querySelector('h1').textContent.trim() : ''
+      high: document.documentElement.scrollHeight - document.documentElement.clientHeight,
+      title: document.title,
+      padHidden: getComputedStyle(document.getElementById('pad')).display === 'none',
+      hudHidden: getComputedStyle(document.getElementById('hud')).display === 'none',
+      titleShown: getComputedStyle(document.getElementById('vTitle')).display !== 'none',
+      shopHidden: getComputedStyle(document.getElementById('vShop')).display === 'none',
+      mode: window.__app.state().mode,
+      cvW: document.getElementById('cv').width,
+      stageW: document.getElementById('stage').clientWidth
     }));
-    ok(fit.wide <= 1, 'スマホ幅で横スクロールが出ない');
-    ok(fit.title.length > 0, `見出しが出ている (${fit.title})`);
+    ok(fit.wide <= 1 && fit.high <= 1, `横にも縦にもスクロールが出ない (${fit.wide}, ${fit.high})`);
+    ok(fit.title === 'スパイ・ミント', `題名が出ている (${fit.title})`);
+    ok(fit.mode === 'title' && fit.titleShown && fit.padHidden && fit.hudHidden && fit.shopHidden,
+      'タイトルでは、そうさボタン・HUD・ぶきやが隠れている (hidden が効く)');
+    ok(fit.cvW >= fit.stageW * 2 - 2 && fit.cvW <= fit.stageW * 2 + 2, `キャンバスが実寸に合っている (${fit.cvW} / ${fit.stageW})`);
 
-    // ------------------------------------------------ ここにアプリごとの確認を足す
-    section('アプリの操作');
-    await phone.locator('#btnAction').tap();
-    await phone.waitForTimeout(120);
-    const after = await phone.evaluate(() => ({
-      count: window.__app.state().count,
-      shown: document.getElementById('result').textContent
+    // タイトルの背景で、自動で走っている (動いている絵が出る)
+    const x0 = await page.evaluate(() => window.__app.demo().p.x);
+    await sleep(700);
+    const x1 = await page.evaluate(() => window.__app.demo().p.x);
+    ok(x1 - x0 > 100, `タイトルの背景でスパイが走っている (+${Math.round(x1 - x0)}px)`);
+
+    // ------------------------------------------------------------ はじめる
+    section('あそぶ');
+    await page.locator('#btnPlay').tap();
+    await page.waitForFunction(() => window.__app.state().mode === 'play');
+    await sleep(200);
+    const play0 = await page.evaluate(() => {
+      const hud = getComputedStyle(document.getElementById('hud')).display;
+      const pad = getComputedStyle(document.getElementById('pad')).display;
+      return { hud, pad, gun: document.getElementById('hGunName').textContent, bombs: document.getElementById('bombN').textContent };
+    });
+    ok(play0.hud !== 'none' && play0.pad !== 'none', 'HUD とそうさボタンが出る');
+    ok(play0.gun.length > 0 && play0.bombs === '3', `持っている水でっぽう (${play0.gun}) と水ばくだん (${play0.bombs})`);
+    const xs = await page.evaluate(() => window.__app.game().p.x);
+    await sleep(500);
+    const xs2 = await page.evaluate(() => window.__app.game().p.x);
+    ok(xs2 - xs > 60, `スパイが自動で走る (+${Math.round(xs2 - xs)}px / 0.5秒)`);
+    await page.evaluate(() => window.__app.show('title'));
+    await ctx.close();
+
+    // ------------------------------------------------------------ ボタンの配置・反応
+    section('そうさボタンが、押せる位置にある');
+    ({ ctx, page } = await freshPage(browser));
+    page.on('pageerror', (e) => errors.push('ボタン: ' + e.message));
+    await installBot(page);
+    await page.evaluate(() => window.__app.start({ seed: 21, noEnemies: true }));
+    await sleep(150);
+    const ids = ['bJump', 'bFire', 'bBomb', 'bSwitch', 'bDoor', 'bGrab', 'btnPause'];
+    const rects = await page.evaluate((list) => list.map((id) => {
+      const el = document.getElementById(id);
+      const r = el.getBoundingClientRect();
+      const top = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
+      return { id, x: r.left, y: r.top, w: r.width, h: r.height, onTop: top === el || el.contains(top), vw: innerWidth, vh: innerHeight };
+    }), ids);
+    ok(rects.every((r) => r.x >= 0 && r.y >= 0 && r.x + r.w <= r.vw && r.y + r.h <= r.vh), '全部のボタンが画面の中に収まっている');
+    ok(rects.every((r) => r.w >= 44 && r.h >= 44), `どれも 44pt 以上 (最小 ${Math.round(Math.min(...rects.map((r) => Math.min(r.w, r.h))))}pt)`);
+    ok(rects.every((r) => r.onTop), '真ん中を押すと、ちゃんとそのボタンに当たる (上に何も重なっていない)');
+    let overlap = 0;
+    for (let i = 0; i < rects.length; i++) for (let j = i + 1; j < rects.length; j++) {
+      const a = rects[i], b = rects[j];
+      if (a.x < b.x + b.w && b.x < a.x + a.w && a.y < b.y + b.h && b.y < a.y + a.h) overlap++;
+    }
+    ok(overlap === 0, `ボタンどうしが重ならない (${overlap} 組)`);
+    const bigGap = rects.find((r) => r.id === 'bJump'), fireR = rects.find((r) => r.id === 'bFire');
+    ok(bigGap.x + bigGap.w < 215 && fireR.x > 215, 'ジャンプは左の親指、うつは右の親指の側にある');
+
+    // 安全域 (iPhone: 上 59 / 下 34) を差し込んでも、中身が切れない
+    await page.addStyleTag({ content: '#app{padding-top:59px !important;padding-bottom:34px !important}' });
+    await sleep(200);
+    const safe = await page.evaluate(() => {
+      const pad = document.getElementById('pad').getBoundingClientRect();
+      const hud = document.getElementById('hDist').getBoundingClientRect();
+      return { padBottom: pad.bottom, vh: innerHeight, hudTop: hud.top, sh: document.documentElement.scrollHeight };
+    });
+    ok(safe.padBottom <= safe.vh - 34 + 0.5 && safe.hudTop >= 59, `安全域ぶんの余白を入れても収まる (下 ${Math.round(safe.padBottom)} <= ${safe.vh - 34}, 上 ${Math.round(safe.hudTop)} >= 59)`);
+    ok(safe.sh <= safe.vh + 1, `ページが縦にはみ出さない (${safe.sh} <= ${safe.vh})`);
+
+    // ------------------------------------------------------------ ジャンプ
+    section('ジャンプ (タッチ)');
+    const cdp = await ctx.newCDPSession(page);
+    const touch = touchTool(cdp);
+    const jb = await center(page, '#bJump');
+    // 谷もじゃま物も無い、まっすぐの所に置く (最初のビルの左はし)
+    const setStraight = () => page.evaluate(() => {
+      const g = window.__app.game();
+      g.p.x = 30; g.p.y = 0; g.p.vy = 0; g.p.onGround = true; g.p.stun = 0; g.p.inv = 0; g.p.jumping = false;
+      g.in.jumpHeld = false;
+    });
+    const measureJump = async (holdMs) => {
+      await setStraight();
+      await sleep(60);
+      await touch.start(1, jb.x, jb.y);
+      let peak = 0;
+      const t0 = Date.now();
+      while (holdMs > 0 && Date.now() - t0 < holdMs) { await sleep(8); }
+      await touch.end(1);
+      for (let i = 0; i < 30; i++) {
+        const y = await page.evaluate(() => window.__app.game().p.y);
+        peak = Math.max(peak, -y);
+        await sleep(16);
+      }
+      return peak;
+    };
+    const tapPeak = await measureJump(0);
+    const holdPeak = await measureJump(300);
+    ok(tapPeak > 15 && tapPeak < 80, `ちょんと押すと低く跳ぶ (高さ ${Math.round(tapPeak)})`);
+    ok(holdPeak > tapPeak + 40 && holdPeak > 110, `押しつづけるほど高く跳ぶ (ちょん ${Math.round(tapPeak)} < 長押し ${Math.round(holdPeak)})`);
+
+    // 指を画面の外へすべらせて離しても、ジャンプが押しっぱなしにならない
+    await setStraight();
+    await touch.start(2, jb.x, jb.y);
+    await sleep(60);
+    await touch.move(2, jb.x - 200, jb.y - 400);
+    await touch.end(2);
+    await sleep(80);
+    const stuck = await page.evaluate(() => window.__app.game().in.jumpHeld);
+    ok(stuck === false, 'ボタンから指をすべらせて離すと、ちゃんと離したことになる');
+    // マウス (パソコン) でも、押したままボタンの外へ出て離したら、押しっぱなしにならない
+    await setStraight();
+    await page.mouse.move(jb.x, jb.y);
+    await page.mouse.down();
+    await sleep(60);
+    const heldNow = await page.evaluate(() => window.__app.game().in.jumpHeld);
+    await page.mouse.move(jb.x + 150, jb.y - 500, { steps: 4 });
+    await page.mouse.up();
+    await sleep(80);
+    const stuck2 = await page.evaluate(() => window.__app.game().in.jumpHeld);
+    ok(heldNow === true && stuck2 === false, 'マウスで押したままボタンの外へ出て離しても、ちゃんと離したことになる');
+
+    // ------------------------------------------------------------ うつ・同時押し
+    section('うつ・ばくだん・同時押し');
+    await page.evaluate(() => { window.__app.game().water = 100; });
+    const fb = await center(page, '#bFire');
+    await setStraight();
+    await touch.start(3, fb.x, fb.y);
+    await sleep(350);
+    const shot = await page.evaluate(() => ({ water: window.__app.game().water, held: window.__app.game().in.fireHeld }));
+    ok(shot.held && shot.water < 99, `押している間、水を撃つ (水 ${shot.water.toFixed(1)})`);
+    // 撃ちながらジャンプ (2 本の指)
+    await touch.start(4, jb.x, jb.y);
+    await sleep(120);
+    const both = await page.evaluate(() => ({ jump: window.__app.game().in.jumpHeld, fire: window.__app.game().in.fireHeld, air: !window.__app.game().p.onGround }));
+    ok(both.jump && both.fire && both.air, '撃ちながらジャンプできる (2 本の指を同時に)');
+    await touch.end(3);
+    await touch.end(4);
+    await sleep(80);
+    const rel = await page.evaluate(() => ({ jump: window.__app.game().in.jumpHeld, fire: window.__app.game().in.fireHeld }));
+    ok(!rel.jump && !rel.fire, '指を離すとどちらも止まる');
+    await page.locator('#bBomb').tap();
+    await sleep(100);
+    const bombs = await page.evaluate(() => window.__app.game().bombs);
+    ok(bombs === 2, `水ばくだんをタップすると 1 つ減る (残り ${bombs})`);
+    await ctx.close();
+
+    // ------------------------------------------------------------ ビルの中・もの
+    section('ビルの中に入る・物をもって投げる');
+    ({ ctx, page } = await freshPage(browser));
+    page.on('pageerror', (e) => errors.push('ドア: ' + e.message));
+    await page.evaluate(() => window.__app.start({ seed: 21, noEnemies: true }));
+    // ドアの手前へ
+    await page.evaluate(() => {
+      const g = window.__app.game();
+      const b = g.world.b.find((q) => q.door && q.x > 300);
+      window.__doorB = b.i;
+      g.p.x = b.doorX - 60; g.p.y = b.roofY; g.p.vy = 0; g.p.onGround = true;
+    });
+    const glow0 = await page.evaluate(() => document.getElementById('bDoor').classList.contains('glow'));
+    ok(glow0 === false, 'ドアから遠いとき、入るボタンは光らない');
+    await page.waitForFunction(() => document.getElementById('bDoor').classList.contains('glow'), null, { timeout: 2000 }).catch(() => {});
+    const glow1 = await page.evaluate(() => document.getElementById('bDoor').classList.contains('glow'));
+    ok(glow1 === true, 'ドアに近づくと、入るボタンが光る');
+    await page.locator('#bDoor').tap();
+    await page.waitForFunction(() => window.__app.game().p.inside >= 0, null, { timeout: 1500 }).catch(() => {});
+    const inside = await page.evaluate(() => window.__app.game().p.inside);
+    ok(inside === await page.evaluate(() => window.__doorB), `タップするとビルの中に入る (inside=${inside})`);
+    // 中を抜けて出口から出る (じゃま物は跳ぶ)
+    await installBot(page);
+    await page.evaluate(() => { window.__auto = true; });
+    await page.waitForFunction(() => window.__app.game().p.inside < 0, null, { timeout: 5000 }).catch(() => {});
+    const outside = await page.evaluate(() => ({ inside: window.__app.game().p.inside, over: window.__app.game().over }));
+    ok(outside.inside === -1 && !outside.over, `出口から屋上へ出る (over=${outside.over})`);
+    await page.evaluate(() => { window.__auto = false; });
+
+    // もの
+    await page.evaluate(() => {
+      const g = window.__app.game();
+      const b = g.world.b[0];
+      g.p.x = b.roof.props[0].x - 50; g.p.y = b.roofY; g.p.vy = 0; g.p.onGround = true; g.p.inside = -1;
+      g.p.stun = 0; g.p.inv = 0; g.p.carry = null;
+    });
+    await page.waitForFunction(() => document.getElementById('bGrab').classList.contains('glow'), null, { timeout: 2000 }).catch(() => {});
+    await page.locator('#bGrab').tap();
+    await page.waitForFunction(() => window.__app.game().p.carry, null, { timeout: 1500 }).catch(() => {});
+    const carried = await page.evaluate(() => ({ c: window.__app.game().p.carry, label: document.getElementById('grabLb').textContent }));
+    ok(!!carried.c && carried.label === 'なげる', `近づいてタップするともてる。ボタンが「なげる」に変わる (${carried.c} / ${carried.label})`);
+    await page.locator('#bGrab').tap();
+    await page.waitForFunction(() => !window.__app.game().p.carry, null, { timeout: 1500 }).catch(() => {});
+    const thrown = await page.evaluate(() => ({ c: window.__app.game().p.carry, n: window.__app.game().thrown.length, label: document.getElementById('grabLb').textContent }));
+    ok(!thrown.c && thrown.n >= 1 && thrown.label === 'もつ', `もう一度タップすると投げる。ボタンは「もつ」に戻る (投げ物 ${thrown.n})`);
+    const ic = await page.evaluate(() => document.getElementById('grabIc').textContent.length);
+    ok(ic > 0, 'ボタンの名前を変えても、中の絵が残っている');
+    await ctx.close();
+
+    // ------------------------------------------------------------ 追ってくる敵
+    section('敵・つかまる・結果');
+    ({ ctx, page } = await freshPage(browser));
+    page.on('pageerror', (e) => errors.push('敵: ' + e.message));
+    await page.evaluate(() => window.__app.start({ seed: 5 }));
+    const enemyInfo = await page.evaluate(() => {
+      const g = window.__app.game();
+      return g.enemies.map((e) => ({ type: e.type, d: g.p.x - e.x }));
+    });
+    ok(enemyInfo.length >= 1 && enemyInfo[0].d > 100 && enemyInfo[0].d < 260, `はじめから敵が後ろにいる (${enemyInfo.map((e) => e.type + ' ' + Math.round(e.d) + 'px').join(', ')})`);
+    // 跳ばずに走る → 敵か谷でおわる。結果の画面が出る
+    await page.waitForFunction(() => window.__app.state().mode === 'result', null, { timeout: 30000 }).catch(() => {});
+    const res = await page.evaluate(() => ({
+      mode: window.__app.state().mode,
+      over: window.__app.game().over,
+      shown: getComputedStyle(document.getElementById('vResult')).display !== 'none',
+      title: document.getElementById('rTitle').textContent,
+      dist: document.getElementById('rDist').textContent,
+      saved: window.__app.save().coins
     }));
-    ok(after.count === 1 && after.shown !== '—', `ボタンを押すと結果が出る (${after.shown})`);
+    ok(res.mode === 'result' && res.shown, `おわると結果の画面が出る (${res.over})`);
+    ok(res.title.length > 0 && /^\d+$/.test(res.dist), `結果に題と距離が出る (${res.title} / ${res.dist}m)`);
+    await page.locator('#btnAgain').tap();
+    await page.waitForFunction(() => window.__app.state().mode === 'play');
+    const again = await page.evaluate(() => ({ over: window.__app.game().over, x: window.__app.game().p.x }));
+    ok(!again.over && again.x < 50, 'もういちどで最初からやり直せる');
+    await ctx.close();
 
-    // 押した直後に表示が飛ばないか (CSS アニメーションの上書き事故よけ)
-    const jump = await measureJump(phone, '#result', 'document.getElementById("btnAction").click()');
-    ok(jump < 12, `押した直後に表示が飛ばない (最大ずれ ${jump}px)`);
+    // 最後の一撃 (勝ち) など: 敵を倒すと数えられる
+    ({ ctx, page } = await freshPage(browser));
+    page.on('pageerror', (e) => errors.push('撃破: ' + e.message));
+    await page.evaluate(() => window.__app.start({ seed: 5 }));
+    await installBot(page);
+    await page.evaluate(() => { window.__auto = true; window.__app.press('fire', true); });
+    await page.waitForFunction(() => window.__app.game().kills >= 1, null, { timeout: 8000 }).catch(() => {});
+    const kills = await page.evaluate(() => ({ k: window.__app.game().kills, c: window.__app.game().coins, hud: document.getElementById('hCoins').textContent }));
+    ok(kills.k >= 1 && kills.c >= 1, `うつと敵をたおせる (たおした ${kills.k} / コイン ${kills.c})`);
+    await sleep(200);
+    ok(Number(await page.evaluate(() => document.getElementById('hCoins').textContent)) === await page.evaluate(() => window.__app.game().coins), 'HUD のコインが中身と合っている');
+    await ctx.close();
 
-    // ------------------------------------------------ 明るい画面・暗い画面
-    section('明るい画面と暗い画面');
-    for (const scheme of ['light', 'dark']) {
-      const themed = await browser.newContext({ ...devices['iPhone 13'], colorScheme: scheme });
-      const page = await themed.newPage();
-      page.on('pageerror', (e) => errors.push(scheme + ': ' + e.message));
-      await page.goto(URL);
-      await page.waitForFunction(() => window.__app);
-      const colors = await page.evaluate(() => ({
-        bg: getComputedStyle(document.body).backgroundColor,
-        fg: getComputedStyle(document.body).color
-      }));
-      ok(colors.bg !== colors.fg, `${scheme}: 文字と背景の色が違う (${colors.bg} / ${colors.fg})`);
-      await themed.close();
+    // ------------------------------------------------------------ いちじていし
+    section('いちじていし・アプリを切りかえたとき');
+    ({ ctx, page } = await freshPage(browser));
+    page.on('pageerror', (e) => errors.push('停止: ' + e.message));
+    await page.evaluate(() => window.__app.start({ seed: 21, noEnemies: true }));
+    await sleep(300);
+    await page.locator('#btnPause').tap();
+    await page.waitForFunction(() => window.__app.state().mode === 'pause');
+    const pa = await page.evaluate(() => window.__app.game().p.x);
+    await sleep(400);
+    const pb = await page.evaluate(() => window.__app.game().p.x);
+    ok(Math.abs(pb - pa) < 0.01, `止めている間は進まない (${pa.toFixed(1)} → ${pb.toFixed(1)})`);
+    await page.locator('#btnResume').tap();
+    await page.waitForFunction(() => window.__app.state().mode === 'play');
+    await sleep(300);
+    const pc = await page.evaluate(() => window.__app.game().p.x);
+    ok(pc - pb > 20, `つづけると、また進む (+${Math.round(pc - pb)}px)`);
+    // 別のアプリへ切りかえた (hidden になった) ら止まる。ヘッドレスは visibilitychange が来ないので、自分で送る
+    const vis = await page.evaluate(() => ({ state: document.visibilityState, hidden: document.hidden }));
+    await page.evaluate(() => {
+      Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+      document.dispatchEvent(new Event('visibilitychange'));
+    });
+    await sleep(100);
+    const m = await page.evaluate(() => window.__app.state().mode);
+    ok(m === 'pause', `見えなくなったら一時停止する (前: ${vis.state}/${vis.hidden} → ${m})`);
+    await ctx.close();
+
+    // ------------------------------------------------------------ ぶきや・保存
+    section('ぶきや (買う・つかう・保存)');
+    ({ ctx, page } = await freshPage(browser));
+    page.on('pageerror', (e) => errors.push('ぶきや: ' + e.message));
+    await page.locator('#btnShop').tap();
+    await page.waitForFunction(() => window.__app.state().mode === 'shop');
+    await sleep(100);
+    const shop = await page.evaluate(() => ({
+      n: document.querySelectorAll('.gcard').length,
+      coins: document.getElementById('sCoins').textContent,
+      listH: document.getElementById('shopList').clientHeight,
+      scrollH: document.getElementById('shopList').scrollHeight
+    }));
+    ok(shop.n >= 12, `水でっぽうが ${shop.n} 種類ならぶ`);
+    ok(shop.scrollH > shop.listH, '一覧は中で送れる (はみ出して押せなくならない)');
+    // いちばん下まで送ると、最後の 1 枚のボタンが画面の中に見える
+    await page.evaluate(() => { const l = document.getElementById('shopList'); l.scrollTop = l.scrollHeight; });
+    await sleep(100);
+    const last = await page.evaluate(() => {
+      const cards = document.querySelectorAll('.gcard');
+      const b = cards[cards.length - 1].querySelector('.gbtn').getBoundingClientRect();
+      return { bottom: b.bottom, top: b.top, vh: innerHeight };
+    });
+    ok(last.top >= 0 && last.bottom <= last.vh, '一番下まで送ると、最後のぶきのボタンも押せる位置に出る');
+    await page.evaluate(() => { document.getElementById('shopList').scrollTop = 0; });
+    // 買えない物は買えない
+    const before = await page.evaluate(() => window.__app.save().coins);
+    await page.locator('.gcard[data-gun="shot"] .gbtn').tap();
+    const after0 = await page.evaluate(() => ({ coins: window.__app.save().coins, owned: window.__app.save().owned.length }));
+    ok(after0.coins === before && after0.owned === 1, `コインが足りないと買えない (${before} のまま)`);
+    // 買える物は買える
+    await page.locator('.gcard[data-gun="twin"] .gbtn').tap();
+    const after1 = await page.evaluate(() => ({ coins: window.__app.save().coins, owned: window.__app.save().owned, eq: window.__app.save().equipped }));
+    ok(after1.owned.includes('twin') && after1.coins === before - 90 && after1.eq === 'twin', `買うとコインが減って、手に入る (${before} → ${after1.coins})`);
+    // 保存・再読み込み
+    await page.reload();
+    await page.waitForFunction(() => window.__app);
+    const kept = await page.evaluate(() => ({ owned: window.__app.save().owned, coins: window.__app.save().coins, eq: window.__app.save().equipped }));
+    ok(kept.owned.includes('twin') && kept.eq === 'twin' && kept.coins === after1.coins, '再読み込みしても、買った物・コイン・つかうぶきが残る');
+    // あそぶと、持っている水でっぽうが全部切りかえられる
+    await page.evaluate(() => window.__app.start({ seed: 21, noEnemies: true }));
+    const guns = await page.evaluate(() => ({ list: window.__app.game().guns.slice(), cur: window.Core.curGun(window.__app.game()).id }));
+    ok(guns.list.length === 2 && guns.cur === 'twin', `はじめは「つかう」にしたぶき (${guns.cur})。持っている ${guns.list.join(',')}`);
+    await page.locator('#bSwitch').tap();
+    await sleep(80);
+    const sw = await page.evaluate(() => ({ cur: window.Core.curGun(window.__app.game()).id, name: document.getElementById('hGunName').textContent }));
+    ok(sw.cur === 'mizu' && sw.name === 'ミズデッポウ', `ぶきかえで切りかわって、表示も変わる (${sw.cur} / ${sw.name})`);
+    await ctx.close();
+
+    // 前の版が残した保存でも開ける・新しい物が足されている
+    section('前の版の保存を引き継ぐ');
+    {
+      const old = await browser.newContext(PHONE);
+      const pg = await old.newPage();
+      const e2 = [];
+      pg.on('pageerror', (e) => e2.push(e.message));
+      await pg.addInitScript(() => {
+        localStorage.setItem('spy-mint-v1', JSON.stringify({ coins: 55, owned: ['mizu', 'nonexistent'], best: 12 }));
+      });
+      await pg.goto(URL);
+      await pg.waitForFunction(() => window.__app);
+      const s = await pg.evaluate(() => window.__app.save());
+      ok(e2.length === 0 && s.coins === 55 && s.best === 12 && s.owned.join() === 'mizu' && s.equipped === 'mizu',
+        '古い形・足りない項目・今は無いぶきの保存でも開けて、中身が補われる');
+      const bad = await browser.newContext(PHONE);
+      const pg2 = await bad.newPage();
+      const e3 = [];
+      pg2.on('pageerror', (e) => e3.push(e.message));
+      await pg2.addInitScript(() => { localStorage.setItem('spy-mint-v1', '{こわれた'); });
+      await pg2.goto(URL);
+      await pg2.waitForFunction(() => window.__app);
+      const s2 = await pg2.evaluate(() => window.__app.save());
+      ok(e3.length === 0 && s2.coins === 120 && s2.owned.join() === 'mizu', 'こわれた保存でも、初期の状態で開く');
+      await bad.close();
+      await old.close();
     }
 
-    // ------------------------------------------------ アイコン (用意していれば)
-    section('アイコン');
-    const desk = await browser.newPage();
-    await desk.goto(URL);
-    const apple = await desk.evaluate(() =>
-      document.querySelector('link[rel="apple-touch-icon"]')?.getAttribute('href'));
-    if (!apple) {
-      skip('ホーム画面用のアイコンはまだ無い (PWA にするときに用意する)');
-    } else {
-      // iOS は SVG のアイコンを使えない
-      ok(apple.endsWith('.png'), `ホーム画面用アイコンが PNG (${apple})`);
-      const res = await desk.request.get(URL + apple.replace('./', ''));
-      ok(res.ok(), `${apple} が配信される`);
-    }
+    // ------------------------------------------------------------ 軽さ (CPU 4 倍遅)
+    section('遅い端末でも動く (CPU を 4 倍遅く)');
+    ({ ctx, page } = await freshPage(browser));
+    page.on('pageerror', (e) => errors.push('速さ: ' + e.message));
+    const cdp2 = await ctx.newCDPSession(page);
+    await installBot(page);
+    await page.evaluate(() => {
+      window.__app.start({ seed: 8 });
+      window.__auto = true;
+      window.__app.press('fire', true);
+      // 水ばくだんを定期的に
+      setInterval(() => { const g = window.__app.game(); if (g && !g.over) { g.bombs = Math.max(g.bombs, 1); g.water = 100; if (g.danger < 150) window.__app.press('bomb', true); } }, 1500);
+    });
+    await sleep(2500);
+    const measure = async (ms) => page.evaluate((dur) => new Promise((resolve) => {
+      const ts = [];
+      let last = performance.now();
+      const t0 = last;
+      const f = (now) => {
+        ts.push(now - last); last = now;
+        if (now - t0 < dur) requestAnimationFrame(f); else resolve(ts);
+      };
+      requestAnimationFrame(f);
+    }), ms);
+    const fast = await measure(2500);
+    await cdp2.send('Emulation.setCPUThrottlingRate', { rate: 4 });
+    await sleep(500);
+    const slowT = await measure(4000);
+    await cdp2.send('Emulation.setCPUThrottlingRate', { rate: 1 });
+    const stat = (a) => { const s = a.slice(1).sort((x, y) => x - y); return { avg: s.reduce((x, y) => x + y, 0) / s.length, p95: s[Math.floor(s.length * 0.95)], n: s.length }; };
+    const sf = stat(fast), ss = stat(slowT);
+    const alive = await page.evaluate(() => !window.__app.game().over);
+    ok(sf.avg < 20, `ふつうの速さ: 1 コマ 平均 ${sf.avg.toFixed(1)}ms (p95 ${sf.p95.toFixed(1)}ms, ${sf.n} コマ)`);
+    ok(ss.avg < 34, `CPU 4 倍遅: 1 コマ 平均 ${ss.avg.toFixed(1)}ms / ${(1000 / ss.avg).toFixed(0)}fps (p95 ${ss.p95.toFixed(1)}ms, ${ss.n} コマ)`);
+    if (!alive) skip('測っている途中でゲームが終わった (計測は終わるまでの分)');
+    await ctx.close();
 
-    // ------------------------------------------------ 更新とオフライン (sw.js があれば)
-    section('更新とオフライン');
-    if (!fs.existsSync(path.join(ROOT, 'sw.js'))) {
-      skip('サービスワーカーはまだ無い (オフライン対応するときに用意する)');
-    } else {
-      const swCtx = await browser.newContext();
-      const swPage = await swCtx.newPage();
-      await swPage.goto(URL);
-      await swPage.waitForFunction(() => window.__app);
-      ok(await swPage.evaluate(() => navigator.serviceWorker.ready.then((r) => !!r.active).catch(() => false)),
-        'サービスワーカーが動く');
-      await swPage.waitForTimeout(800);
-
-      // 直したものが 1 回のリロードで出るか (キャッシュ優先だと古い画面が出る)
-      const indexPath = path.join(ROOT, 'index.html');
-      const original = fs.readFileSync(indexPath, 'utf8');
-      const marker = original.match(/<h1[^>]*>([^<]*)<\/h1>/);
-      fs.writeFileSync(indexPath, original.replace(marker[1], 'こうしんかくにん'));
-      await swPage.reload();
-      await swPage.waitForTimeout(400);
-      const title = await swPage.textContent('h1');
-      fs.writeFileSync(indexPath, original);
-      ok(title.trim() === 'こうしんかくにん', `直したものが 1 回のリロードで出る (${title.trim()})`);
-
-      await swPage.reload();
-      await swPage.waitForTimeout(500);
-      await swCtx.setOffline(true);
-      await swPage.reload().catch(() => {});
-      await swPage.waitForTimeout(400);
-      ok(await swPage.evaluate(() => !!window.__app).catch(() => false),
-        'ネットにつながらなくても開ける');
-      await swCtx.setOffline(false);
-    }
+    // ------------------------------------------------------------ 長く遊ぶ (自動で 40 秒)
+    section('自動で長く遊ばせて、おかしくならないか');
+    ({ ctx, page } = await freshPage(browser));
+    page.on('pageerror', (e) => errors.push('長く: ' + e.message));
+    await installBot(page);
+    await page.evaluate(() => {
+      window.__app.start({ seed: 33 });
+      window.__auto = true;
+      window.__app.press('fire', true);
+      setInterval(() => {
+        const g = window.__app.game(); if (!g || g.over) return;
+        g.bombs = Math.max(g.bombs, 1);
+        if (g.danger < 120) window.__app.press('bomb', true);
+        if (window.Core.nearDoor(g)) window.__app.press('door', true);
+      }, 400);
+    });
+    await sleep(40000);
+    const long = await page.evaluate(() => {
+      const g = window.__app.game();
+      return { x: g.p.x, over: g.over, m: window.Core.metersOf(g.p.x), kills: g.kills, coins: g.coins, fx: window.Art.fxCount(), ev: g.events.length, shots: g.shots.length, thrown: g.thrown.length, enemies: g.enemies.length, puddles: g.puddles.length };
+    });
+    ok(long.m > 150 || long.over, `40 秒走った (${long.m}m, たおした ${long.kills}, コイン ${long.coins}${long.over ? ', ' + long.over : ''})`);
+    ok(long.fx <= 420 && long.ev < 300 && long.shots < 200 && long.thrown < 20 && long.puddles < 20, `効果・水の玉・投げ物がたまりつづけない (fx ${long.fx}, 玉 ${long.shots}, 投げ物 ${long.thrown}, 水たまり ${long.puddles})`);
+    await ctx.close();
 
     section('エラー');
     ok(errors.length === 0, errors.length ? '画面のエラー: ' + errors.join(' / ') : 'JS エラーなし');
@@ -207,3 +570,5 @@ run().catch((err) => {
   console.error(err);
   process.exit(1);
 });
+
+void fs;

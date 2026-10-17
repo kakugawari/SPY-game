@@ -2,34 +2,117 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<title>アプリの雛形</title>
-<meta name="description" content="ビルドなしで動くアプリの雛形">
-<meta name="theme-color" content="#151a2e">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+<title>スパイ・ミント</title>
+<meta name="description" content="かわいいスパイが、水でっぽうと水ばくだんで追っ手から逃げる屋上アクション">
+<meta name="theme-color" content="#2a2160">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="スパイ・ミント">
 <link rel="icon" href="./icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="./apple-touch-icon.png">
 <link rel="stylesheet" href="./styles.css">
 </head>
 <body>
 
 <div id="app">
-  <header id="topbar">
-    <h1 class="title">アプリの雛形</h1>
-    <div class="topbar-actions">
-      <button type="button" id="btnAction" class="btn btn-primary">ためす</button>
-    </div>
-  </header>
+  <div id="stage">
+    <canvas id="cv"></canvas>
 
-  <main id="stage">
-    <p class="lead">ここにアプリを作る。</p>
-    <p class="result" id="result">—</p>
-    <p class="note">
-      ロジックは <code>src/core.js</code> に、画面は <code>src/app.js</code> に書く。<br>
-      <code>npm test</code> でロジックを、<code>npm run test:ui</code> で画面を確かめる。
-    </p>
-  </main>
+    <!-- あそんでいる間の表示 -->
+    <div id="hud" hidden>
+      <div class="hud-left">
+        <div class="hud-dist"><b id="hDist">0</b><small>m</small></div>
+        <div class="hud-coin"><span class="coin-dot"></span><b id="hCoins">0</b></div>
+      </div>
+      <div class="hud-center">
+        <div class="hud-gun"><span class="gi" id="hGunIcon">🔫</span><span class="gn" id="hGunName">ミズデッポウ</span></div>
+        <div class="hud-water"><i id="hWater"></i></div>
+      </div>
+      <button type="button" id="btnPause" class="hud-pause" aria-label="いちじていし"><span>Ⅱ</span></button>
+      <div id="warn" aria-hidden="true"><span>!</span></div>
+      <div id="toast" aria-live="polite"></div>
+    </div>
+
+    <!-- タイトル -->
+    <section id="vTitle" class="view">
+      <div class="title-top">
+        <div class="logo">
+          <span class="logo-1">スパイ</span>
+          <span class="logo-2">ミント</span>
+        </div>
+        <div class="ribbon">みずでっぽう だいさくせん!</div>
+      </div>
+      <div class="title-bottom">
+        <button type="button" id="btnPlay" class="big-btn pink"><span class="bi">▶</span><span class="bl">あそぶ</span></button>
+        <button type="button" id="btnShop" class="big-btn blue"><span class="bi">🔫</span><span class="bl">ぶきや</span></button>
+        <div class="title-meta">
+          <span class="meta-chip"><span class="coin-dot"></span><b id="tCoins">0</b></span>
+          <span class="meta-chip">ベスト <b id="tBest">0</b>m</span>
+          <button type="button" id="btnSound" class="meta-chip btn-chip" aria-label="おと"><span id="soundLabel">🔊 おと</span></button>
+        </div>
+        <p class="how">うしろから追ってくる黒服から、屋上を走って逃げよう。<br>谷はジャンプ。とびらから<b>ビルの中</b>を抜ければ近道!</p>
+      </div>
+    </section>
+
+    <!-- ぶきや -->
+    <section id="vShop" class="view solid" hidden>
+      <header class="shop-head">
+        <button type="button" id="btnShopBack" class="round-btn" aria-label="もどる">‹</button>
+        <h2>ぶきや</h2>
+        <div class="meta-chip"><span class="coin-dot"></span><b id="sCoins">0</b></div>
+      </header>
+      <p class="shop-note">コインで水でっぽうを買おう。<b>「つかう」</b>で、はじめに持つ1丁をえらべるよ。(あそんでいる間は ぜんぶ切りかえられる)</p>
+      <div id="shopList" class="shop-list"></div>
+    </section>
+
+    <!-- けっか -->
+    <section id="vResult" class="view dim" hidden>
+      <div class="card">
+        <h2 id="rTitle">つかまっちゃった!</h2>
+        <div class="r-dist"><b id="rDist">0</b><small>m</small></div>
+        <p id="rNew" class="r-new" hidden>🎉 ベストこうしん!</p>
+        <div class="r-rows">
+          <div><span>コイン</span><b id="rCoins">0</b></div>
+          <div><span>やっつけた</span><b id="rKills">0</b></div>
+          <div><span>ベスト</span><b id="rBest">0</b></div>
+        </div>
+        <div class="r-btns">
+          <button type="button" id="btnAgain" class="big-btn pink small"><span class="bi">↻</span><span class="bl">もういちど</span></button>
+          <button type="button" id="btnResultShop" class="big-btn blue small"><span class="bi">🔫</span><span class="bl">ぶきや</span></button>
+          <button type="button" id="btnResultTitle" class="big-btn gray small"><span class="bi">⌂</span><span class="bl">タイトル</span></button>
+        </div>
+      </div>
+    </section>
+
+    <!-- いちじていし -->
+    <section id="vPause" class="view dim" hidden>
+      <div class="card">
+        <h2>いちじていし</h2>
+        <div class="r-btns">
+          <button type="button" id="btnResume" class="big-btn pink small"><span class="bi">▶</span><span class="bl">つづける</span></button>
+          <button type="button" id="btnPauseSound" class="big-btn blue small"><span class="bi">🔊</span><span class="bl" id="pauseSoundLabel">おと</span></button>
+          <button type="button" id="btnPauseQuit" class="big-btn gray small"><span class="bi">⌂</span><span class="bl">やめる</span></button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <!-- そうさボタン (下) -->
+  <div id="pad" hidden>
+    <button type="button" id="bJump" class="pb big mint"><span class="ic">⤴</span><span class="lb">ジャンプ</span></button>
+    <div class="pgrid">
+      <button type="button" id="bBomb" class="pb sm orange"><span class="ic">💣</span><span class="lb">水ばくだん</span><em id="bombN">3</em></button>
+      <button type="button" id="bSwitch" class="pb sm violet"><span class="ic">🔄</span><span class="lb">ぶきかえ</span></button>
+      <button type="button" id="bDoor" class="pb sm rose"><span class="ic">🚪</span><span class="lb">入る</span></button>
+      <button type="button" id="bGrab" class="pb sm yellow"><span class="ic" id="grabIc">✋</span><span class="lb" id="grabLb">もつ</span></button>
+    </div>
+    <button type="button" id="bFire" class="pb big sky"><span class="ic">💦</span><span class="lb">うつ</span></button>
+  </div>
 </div>
 
 <script src="./core.js"></script>
+<script src="./art.js"></script>
 <script src="./app.js"></script>
 </body>
 </html>

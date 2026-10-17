@@ -127,10 +127,10 @@
 
   // ------------------------------------------------------------ 敵
   const ENEMIES = {
-    suit:  { name: '黒服',     w: 20, h: 50, hp: 3, k: 1.03, coin: 3, resist: 0 },
-    dog:   { name: 'わんこ',   w: 34, h: 22, hp: 1, k: 1.12, coin: 2, resist: 0 },
-    big:   { name: 'おおおとこ', w: 32, h: 60, hp: 9, k: 1.0, coin: 8, resist: 0.75 },
-    drone: { name: 'ドローン', w: 30, h: 20, hp: 2, k: 1.07, coin: 4, resist: 0.3, fly: true }
+    suit:  { name: 'くろねこ',     w: 20, h: 50, hp: 3, k: 1.03, coin: 3, resist: 0 },
+    dog:   { name: 'ジャックラッセル',   w: 34, h: 22, hp: 1, k: 1.12, coin: 2, resist: 0 },
+    big:   { name: 'ヒグマ', w: 32, h: 60, hp: 9, k: 1.0, coin: 8, resist: 0.75 },
+    drone: { name: 'コウモリ', w: 30, h: 20, hp: 2, k: 1.07, coin: 4, resist: 0.3, fly: true }
   };
 
   // ------------------------------------------------------------ 世界 (ビルの並び)

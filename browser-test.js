@@ -462,6 +462,36 @@ async function run() {
     ok(Number(await page.evaluate(() => document.getElementById('hCoins').textContent)) === await page.evaluate(() => window.__app.game().coins), 'HUD のコインが中身と合っている');
     await ctx.close();
 
+    // ------------------------------------------------------------ 敵の絵
+    section('敵 (動物スパイ 4 人) の絵が描かれている');
+    ({ ctx, page } = await freshPage(browser));
+    page.on('pageerror', (e) => errors.push('敵の絵: ' + e.message));
+    await page.waitForFunction(() => ['suit', 'dog', 'big', 'drone'].every((k) => window.Art.enemySpritesReady(k)), null, { timeout: 8000 }).catch(() => {});
+    const ready = await page.evaluate(() => ['suit', 'dog', 'big', 'drone'].map((k) => window.Art.enemySpritesReady(k)));
+    ok(ready.every(Boolean), `4 人ぶんの絵 (くろねこ・ジャックラッセル・ヒグマ・コウモリ) が読み込めている (${ready.join(',')})`);
+    await page.evaluate(() => window.__app.start({ seed: 5, noEnemies: true }));
+    for (const type of ['suit', 'dog', 'big', 'drone']) {
+      const px = await page.evaluate(async (ty) => {
+        const g = window.__app.game(), a = window.__app.state();
+        g.noEnemies = true; g.p.stun = 99; g.p.inv = 99; g.enemies.length = 0;
+        const b = window.Core.buildingAt(g.world, g.p.x);
+        const e = window.Core.spawnEnemy(g, ty, g.p.x + 150);
+        e.x = g.p.x + 150; e.y = ty === 'drone' ? b.roofY - 26 : b.roofY; e.vy = 0; e.hp = e.maxhp = 999; e.stun = 99;
+        await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+        const cv = document.getElementById('cv'), c = cv.getContext('2d'), S = a.S, cam = a.camPlay;
+        const x0 = Math.floor((e.x - 45 - cam.x) * S), y0 = Math.floor((e.y - 90 - cam.y) * S), w = Math.floor(90 * S), h = Math.floor(90 * S);
+        const d = c.getImageData(Math.max(0, x0), Math.max(0, y0), w, h).data;
+        // 空 (なめらかなグラデーション) とちがう画素を数える: まわりの 4 隅の色との差
+        const ref = [d[0], d[1], d[2]];
+        let n = 0;
+        for (let i = 0; i < d.length; i += 4) if (Math.abs(d[i] - ref[0]) + Math.abs(d[i + 1] - ref[1]) + Math.abs(d[i + 2] - ref[2]) > 90 && d[i + 3] > 0) n++;
+        g.enemies.length = 0;
+        return n;
+      }, type);
+      ok(px > 1500, `${type}: 敵の絵が描かれている (空と違う画素 ${px})`);
+    }
+    await ctx.close();
+
     // ------------------------------------------------------------ いちじていし
     section('いちじていし・アプリを切りかえたとき');
     ({ ctx, page } = await freshPage(browser));

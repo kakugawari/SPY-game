@@ -572,8 +572,72 @@
   }
 
   // ------------------------------------------------------------ 敵
+  // ------------------------------------------------------------ 敵 (動物スパイ。絵は画像、読み込めるまではベクターで代用)
+  // 画像は [ファイル, 足もとの横の中心 (左から何割か)]。k: 画像 1px あたりの世界の長さ (4 人とも同じ縮尺)
+  // suit=くろねこ / dog=ジャックラッセル / big=ヒグマ / drone=コウモリ (中身のキーは前のまま)
+  const ESPR = {
+    suit:  { run: ['./en-cat-run.webp', 0.52],  jump: ['./en-cat-jump.webp', 0.51],  hit: ['./en-cat-hit.webp', 0.55] },
+    dog:   { run: ['./en-dog-run.webp', 0.54],  jump: ['./en-dog-jump.webp', 0.49],  hit: ['./en-dog-hit.webp', 0.54] },
+    big:   { run: ['./en-bear-run.webp', 0.49], jump: ['./en-bear-jump.webp', 0.51], hit: ['./en-bear-hit.webp', 0.58] },
+    drone: { fly1: ['./en-bat-fly1.webp', 0.53], fly2: ['./en-bat-fly2.webp', 0.52], hit: ['./en-bat-hit.webp', 0.53] }
+  };
+  const EK = 0.476;
+  const VIS_H = { suit: 56, dog: 38, big: 72, drone: 44 };      // 絵の見かけの高さ (飾りの位置に使う)
+  Object.keys(ESPR).forEach((type) => {
+    const set = ESPR[type];
+    Object.keys(set).forEach((pose) => {
+      const s = { src: set[pose][0], ax: set[pose][1], ok: false, img: new Image() };
+      s.img.onload = () => { s.ok = true; };
+      s.img.src = s.src;
+      set[pose] = s;
+    });
+  });
+  function enemySpritesReady(type) {
+    const set = ESPR[type];
+    return !!set && Object.keys(set).every((k) => set[k].ok);
+  }
+  function enemyVisH(e) { return enemySpritesReady(e.type) ? VIS_H[e.type] : C.ENEMIES[e.type].h; }
+
+  function drawEnemySprite(c, e, t) {
+    const set = ESPR[e.type];
+    let pose;
+    if (e.state === 'fly' || e.stun > 0) pose = 'hit';
+    else if (e.type === 'drone') pose = Math.floor(t * 9 + e.id) % 2 ? 'fly2' : 'fly1';
+    else pose = e.onGround ? 'run' : 'jump';
+    const s = set[pose];
+    const w = s.img.width * EK, h = s.img.height * EK;
+    const drone = e.type === 'drone';
+    c.save();
+    c.translate(e.x, e.y);
+    if (e.state === 'fly') {
+      c.translate(0, -h / 2); c.rotate(e.rot || 0); c.translate(0, h / 2);
+      c.globalAlpha = Math.max(0, Math.min(1, e.flyT / 0.5));
+    }
+    if (e.inside >= 0 && !e.seen) c.globalAlpha *= 0.4;
+    if (e.onGround && !drone && e.state === 'chase') {
+      c.fillStyle = 'rgba(0,0,0,.2)'; c.beginPath(); c.ellipse(0, 0, w * 0.32, 3, 0, 0, TAU); c.fill();
+    }
+    const running = pose === 'run';
+    const bob = running ? Math.abs(Math.sin(e.anim)) * 2.4 : 0;
+    const lean = running ? Math.sin(e.anim) * 0.035 : (pose === 'jump' ? Math.max(-0.2, Math.min(0.3, (e.vy || 0) / 1800)) : (drone ? Math.sin(t * 7 + e.id) * 0.05 : 0));
+    const face = pose === 'hit' ? 1 : (e.vx < -1 ? -1 : 1);
+    c.translate(0, -bob + (drone ? h / 2 - 10 : 0));      // コウモリは、当たり判定の中心に絵の中心を合わせる
+    c.rotate(lean);
+    c.scale(face, 1);
+    c.drawImage(s.img, -s.ax * w, -h, w, h);
+    if (e.flash > 0) {                               // 当たった瞬間は白く光る
+      c.globalCompositeOperation = 'lighter'; c.globalAlpha *= 0.6;
+      c.drawImage(s.img, -s.ax * w, -h, w, h);
+    }
+    c.restore();
+  }
+
   function drawEnemy(c, e, t) {
     const T = C.ENEMIES[e.type];
+    const useSpr = enemySpritesReady(e.type);
+    const VH = useSpr ? VIS_H[e.type] : T.h;
+    if (useSpr) drawEnemySprite(c, e, t);
+    else {
     c.save();
     c.translate(e.x, e.y);
     if (e.state === 'fly') {
@@ -641,30 +705,31 @@
       c.beginPath(); c.ellipse(-12, -13, 10 * Math.abs(sp) + 2, 1.8, 0, 0, TAU); c.ellipse(12, -13, 10 * Math.abs(-sp) + 2, 1.8, 0, 0, TAU); c.fill();
     }
     c.restore();
+    }
     // 状態の飾り
     c.save();
     c.translate(e.x, e.y);
     if (e.state === 'chase') {
       if (e.freeze > 0) {
-        c.fillStyle = 'rgba(170,230,255,.55)'; rr(c, -T.w / 2 - 4, -T.h - 4, T.w + 8, T.h + 6, 6); c.fill();
-        c.strokeStyle = 'rgba(255,255,255,.9)'; c.lineWidth = 1.5; rr(c, -T.w / 2 - 4, -T.h - 4, T.w + 8, T.h + 6, 6); c.stroke();
+        c.fillStyle = 'rgba(170,230,255,.55)'; rr(c, -T.w / 2 - 4, -VH - 4, T.w + 8, VH + 6, 6); c.fill();
+        c.strokeStyle = 'rgba(255,255,255,.9)'; c.lineWidth = 1.5; rr(c, -T.w / 2 - 4, -VH - 4, T.w + 8, VH + 6, 6); c.stroke();
       }
       if (e.wet > 0.2) {
         c.fillStyle = 'rgba(90,190,255,.8)';
         for (let i = 0; i < 3; i++) {
-          const dx = (i - 1) * 7, dy = -T.h * 0.7 + ((t * 40 + i * 9) % 22);
+          const dx = (i - 1) * 7, dy = -VH * 0.7 + ((t * 40 + i * 9) % 22);
           c.beginPath(); c.arc(dx, dy, 2, 0, TAU); c.fill();
         }
       }
       if (e.stun > 0) {
         for (let i = 0; i < 3; i++) {
           const a = t * 7 + i * 2.1;
-          drawStar(c, Math.cos(a) * 11, -T.h - 9 + Math.sin(a) * 3, 3.6, e.freeze > 0 ? '#bfe9ff' : '#ffe66d');
+          drawStar(c, Math.cos(a) * 11, -VH - 9 + Math.sin(a) * 3, 3.6, e.freeze > 0 ? '#bfe9ff' : '#ffe66d');
         }
       }
       if (e.hp < e.maxhp && e.maxhp > 2) {
-        c.fillStyle = 'rgba(0,0,0,.45)'; rr(c, -14, -T.h - 12, 28, 5, 2.5); c.fill();
-        c.fillStyle = '#ff6b6b'; rr(c, -14, -T.h - 12, 28 * Math.max(0, e.hp / e.maxhp), 5, 2.5); c.fill();
+        c.fillStyle = 'rgba(0,0,0,.45)'; rr(c, -14, -VH - 12, 28, 5, 2.5); c.fill();
+        c.fillStyle = '#ff6b6b'; rr(c, -14, -VH - 12, 28 * Math.max(0, e.hp / e.maxhp), 5, 2.5); c.fill();
       }
     }
     c.restore();
@@ -952,6 +1017,7 @@
     drawStar: drawStar,
     fxCount: function () { return fx.length; },
     spritesReady: spritesReady,
+    enemySpritesReady: enemySpritesReady,
     themeOf: themeOf,
     skyCss: skyCss,
     THEMES: THEMES,

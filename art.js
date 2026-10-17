@@ -336,7 +336,7 @@
     }
   }
 
-  function drawSpy(c, o) {
+  function drawSpyVector(c, o) {
     c.save();
     c.translate(o.x, o.y);
     const run = o.air ? 0 : o.phase;
@@ -464,6 +464,52 @@
     c.fillStyle = '#4b3a8f';
     c.beginPath(); c.moveTo(hx - 8, hy - 7); c.quadraticCurveTo(hx + 2, hy - 3, hx + 11, hy - 6); c.lineTo(hx + 11, hy - 9); c.lineTo(hx - 8, hy - 9); c.closePath(); c.fill();
     c.restore();
+  }
+
+  // ------------------------------------------------------------ 主人公 (キツネのスパイ。絵は画像、読み込めるまではベクターで代用)
+  // k: 画像 1px あたりの世界の長さ / ax: 足もとの中心が、画像の左から何割の所か
+  const SPR = {
+    run:    { src: './spy-run.webp',    ax: 0.56, k: 0.56 },
+    jump:   { src: './spy-jump.webp',   ax: 0.56, k: 0.56 },
+    gadget: { src: './spy-gadget.webp', ax: 0.55, k: 0.56 }
+  };
+  Object.keys(SPR).forEach((key) => {
+    const s = SPR[key];
+    s.img = new Image();
+    s.ok = false;
+    s.img.onload = () => { s.ok = true; };
+    s.img.src = s.src;
+  });
+  function spritesReady() { return Object.keys(SPR).every((k) => SPR[k].ok); }
+
+  function drawSpy(c, o) {
+    if (!spritesReady()) { drawSpyVector(c, o); return; }
+    const pose = o.firing && !o.carry ? 'gadget' : (o.air ? 'jump' : 'run');
+    const s = SPR[pose];
+    const w = s.img.width * s.k, h = s.img.height * s.k;
+    c.save();
+    c.translate(o.x, o.y);
+    if (!o.air) { c.fillStyle = 'rgba(0,0,0,.2)'; c.beginPath(); c.ellipse(0, 0, 15, 3, 0, 0, TAU); c.fill(); }
+    if (o.inv > 0 && Math.floor(o.t * 20) % 2 === 0) c.globalAlpha = 0.45;
+    let rot = 0;
+    if (o.stun > 0) rot = -0.32 + Math.sin(o.t * 30) * 0.03;
+    else if (pose === 'jump') rot = Math.max(-0.2, Math.min(0.3, (o.vy || 0) / 1800));
+    else if (pose === 'run') rot = Math.sin(o.phase) * 0.035;
+    else rot = -(o.aim || 0) * 0.3;
+    const bob = pose === 'run' && !o.air && !(o.stun > 0) ? Math.abs(Math.sin(o.phase)) * 2.4 : 0;
+    const sq = pose === 'run' ? 1 + Math.sin(o.phase * 2) * 0.025 : 1;
+    c.translate(0, -bob);
+    c.rotate(rot);
+    c.scale(pose === 'gadget' ? -1 : 1, sq);
+    const recoil = pose === 'gadget' ? (o.shoot || 0) * 2 : 0;   // うつ瞬間に少しのけぞる
+    c.drawImage(s.img, -s.ax * w + recoil, -h, w, h);
+    c.restore();
+    if (o.stun > 0) {
+      for (let i = 0; i < 3; i++) {
+        const an = o.t * 8 + i * 2.1;
+        drawStar(c, o.x + Math.cos(an) * 14, o.y - h - 2 + Math.sin(an) * 3, 4, '#ffe66d');
+      }
+    }
   }
 
   // ------------------------------------------------------------ 敵
@@ -822,9 +868,9 @@
     const gun = C.curGun(g);
     drawSpy(c, {
       x: p.x, y: p.y, phase: p.anim, air: !p.onGround, inv: p.inv, stun: p.stun, t: t,
-      carry: p.carry, aim: view.aim || 0, shoot: view.shoot || 0, gunId: gun.id, gunColor: gun.color
+      carry: p.carry, aim: view.aim || 0, shoot: view.shoot || 0, firing: (view.fireT || 0) > 0, vy: p.vy, gunId: gun.id, gunColor: gun.color
     });
-    if (p.carry) drawProp(c, p.carry, p.x + 3, p.y - 54, Math.sin(t * 10) * 0.06);
+    if (p.carry) drawProp(c, p.carry, p.x + 3, p.y - 62, Math.sin(t * 10) * 0.06);
 
     // 投げ物・水
     for (const o of g.thrown) {
@@ -846,6 +892,7 @@
     drawProp: drawProp,
     drawStar: drawStar,
     fxCount: function () { return fx.length; },
+    spritesReady: spritesReady,
     hash: hash
   };
 })();

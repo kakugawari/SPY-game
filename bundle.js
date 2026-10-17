@@ -20,10 +20,12 @@ const css = read('styles.css');
 html = html.replace('<link rel="stylesheet" href="./styles.css">', () => '<style>\n' + css + '\n</style>');
 html = html.replace(/<script src="\.\/([\w-]+\.js)"><\/script>/g, (m, name) =>
   '<script>\n' + read(name).replace(/<\/script/gi, '<\\/script') + '\n</script>');
-html = html.replace('href="./icon.svg"', () => 'href="data:image/svg+xml;base64,' + b64('icon.svg') + '"');
+html = html.replace('href="./icon.png"', () => 'href="data:image/png;base64,' + b64('icon.png') + '"');
 html = html.replace('href="./apple-touch-icon.png"', () => 'href="data:image/png;base64,' + b64('apple-touch-icon.png') + '"');
 
-if (/(href|src)="\.\//.test(html)) throw new Error('埋め込めていない読み込みが残っている');
+// 画像 (キャラの絵) を埋め込む。HTML の src と、JS の './xxx.webp' の両方
+html = html.replace(/(["'])\.\/([\w-]+\.webp)\1/g, (m, q, name) => q + 'data:image/webp;base64,' + b64(name) + q);
+if (/(href|src)="\.\//.test(html) || /['"]\.\/[\w-]+\.(webp|png|svg)['"]/.test(html)) throw new Error('埋め込めていない読み込みが残っている');
 
 if (artifact) {
   const title = (html.match(/<title>([^<]*)<\/title>/) || [])[1] || 'スパイ・ミント';

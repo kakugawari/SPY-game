@@ -239,7 +239,7 @@
     app.acc = 0;
     app.over = false; app.overT = 0;
     app.shake = 0;
-    app.view.shoot = 0; app.view.aim = 0;
+    app.view.shoot = 0; app.view.fireT = 0; app.view.aim = 0;
     app.cache = {};
     A.clearFx();
     releaseAll();
@@ -490,7 +490,7 @@
       A.handleEvent(ev);
       Snd.event(ev);
       switch (ev.t) {
-        case 'shoot': app.view.shoot = 1; break;
+        case 'shoot': app.view.shoot = 1; app.view.fireT = 0.3; break;
         case 'explode': app.shake = 0.4; break;
         case 'gift': {
           const gun = C.GUN_BY_ID[ev.gun];
@@ -580,6 +580,7 @@
     // 描く
     resize();
     app.view.shoot = Math.max(0, app.view.shoot - d * 8);
+    app.view.fireT = Math.max(0, (app.view.fireT || 0) - d);
     app.shake = Math.max(0, app.shake - d);
     const v = app.view;
     v.t = app.time;

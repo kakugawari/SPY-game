@@ -145,6 +145,10 @@ button { font: inherit; color: inherit; touch-action: manipulation; }
   transform: rotate(-2deg);
 }
 
+.hero-wrap { flex: 1 1 0; min-height: 0; width: 100%; display: flex; justify-content: center; align-items: flex-end; padding: 6px 0 0; }
+.hero { max-height: 100%; max-width: 78%; object-fit: contain; filter: drop-shadow(0 8px 0 rgba(42,33,96,.35)); animation: hero-bob 2.4s ease-in-out infinite alternate; pointer-events: none; }
+@keyframes hero-bob { from { transform: translateY(0) rotate(-1deg); } to { transform: translateY(-8px) rotate(1deg); } }
+
 .title-bottom { flex: none; display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 0 22px 22px; }
 
 .big-btn {

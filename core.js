@@ -721,8 +721,8 @@
   function fireGun(g) {
     const p = g.p;
     const gun = curGun(g);
-    const sx = p.x - 8;
-    const sy = p.y - 30;
+    const sx = p.x - 28;            // 後ろへ向けたカメラ型の水でっぽうの先
+    const sy = p.y - 34;
     const tgt = nearestBehind(g, 520);
     let a = 0;
     if (tgt) {

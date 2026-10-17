@@ -165,6 +165,18 @@ async function run() {
     const x1 = await page.evaluate(() => window.__app.demo().p.x);
     ok(x1 - x0 > 100, `タイトルの背景でスパイが走っている (+${Math.round(x1 - x0)}px)`);
 
+    // タイトルの絵 (キツネ) が読み込めて、ボタンと重ならない
+    await page.waitForFunction(() => window.Art && window.Art.spritesReady(), null, { timeout: 5000 }).catch(() => {});
+    const hero = await page.evaluate(() => {
+      const im = document.getElementById('heroImg').getBoundingClientRect();
+      const play = document.getElementById('btnPlay').getBoundingClientRect();
+      const logo = document.querySelector('.ribbon').getBoundingClientRect();
+      const el = document.getElementById('heroImg');
+      return { ok: el.complete && el.naturalWidth > 0, top: im.top, bottom: im.bottom, left: im.left, right: im.right, playTop: play.top, ribbonBottom: logo.bottom, w: innerWidth, sprites: window.Art.spritesReady() };
+    });
+    ok(hero.ok && hero.sprites, '主人公の絵 (タイトルの大きな絵・走る/跳ぶ/撃つ) が読み込めている');
+    ok(hero.bottom <= hero.playTop + 1 && hero.top >= hero.ribbonBottom - 1 && hero.left >= 0 && hero.right <= hero.w, `タイトルの絵が「あそぶ」や題字に重ならず、画面に収まる (下 ${Math.round(hero.bottom)} <= ${Math.round(hero.playTop)})`);
+
     // ------------------------------------------------------------ はじめる
     section('あそぶ');
     await page.locator('#btnPlay').tap();
@@ -181,6 +193,19 @@ async function run() {
     await sleep(500);
     const xs2 = await page.evaluate(() => window.__app.game().p.x);
     ok(xs2 - xs > 60, `スパイが自動で走る (+${Math.round(xs2 - xs)}px / 0.5秒)`);
+    // 主人公のキツネが実際に描かれている (オレンジ色の毛の画素が、スパイの位置に出る)
+    const orange = await page.evaluate(() => {
+      const a = window.__app.state(), g = window.__app.game(), cv = document.getElementById('cv');
+      const c = cv.getContext('2d');
+      const cam = a.camPlay, S = a.S;
+      const x0 = Math.max(0, Math.floor((g.p.x - 30 - cam.x) * S)), y0 = Math.max(0, Math.floor((g.p.y - 70 - cam.y) * S));
+      const w = Math.floor(70 * S), h = Math.floor(80 * S);
+      const d = c.getImageData(x0, y0, w, h).data;
+      let n = 0;
+      for (let i = 0; i < d.length; i += 4) if (d[i] > 190 && d[i + 1] > 90 && d[i + 1] < 175 && d[i + 2] < 70) n++;
+      return n;
+    });
+    ok(orange > 150, `スパイの位置にキツネの毛の色が描かれている (オレンジの画素 ${orange})`);
     await page.evaluate(() => window.__app.show('title'));
     await ctx.close();
 

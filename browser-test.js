@@ -665,6 +665,34 @@ async function run() {
     ok(lo === 0, `低い段差のおりでは、ロールしない (${lo} 回)`);
     await ctx.close();
 
+    // ------------------------------------------------------------ 2 だんジャンプ
+    section('2 だんジャンプ');
+    ({ ctx, page } = await freshPage(browser));
+    page.on('pageerror', (e) => errors.push('2だん: ' + e.message));
+    await page.evaluate(() => window.__app.start({ seed: 21, noEnemies: true }));
+    await sleep(300);
+    const dj = await page.evaluate(async () => {
+      const g = window.__app.game(), A = window.__app.state().animPlay, w = (ms) => new Promise((r) => setTimeout(r, ms));
+      g.p.x = 20; g.p.y = 0; g.p.vy = 0; g.p.onGround = true; g.p.stun = 0; g.p.inv = 0; g.p.air2 = false;
+      await w(200);
+      const ev = []; const j0 = g.p.jumps2; const m0 = A.maxSpin;
+      window.__app.press('jump', true); await w(40); window.__app.press('jump', false);
+      await w(220);
+      const vy1 = g.p.vy, y1 = g.p.y;
+      window.__app.press('jump', true); await w(40); window.__app.press('jump', false);
+      await w(30);
+      const vy2 = g.p.vy;
+      let top = g.p.y;
+      const t0 = performance.now();
+      while (!g.p.onGround && performance.now() - t0 < 3000) { await w(16); top = Math.min(top, g.p.y); }
+      return { n: g.p.jumps2 - j0, vy1, vy2, y1, top, landed: g.p.onGround, air2: g.p.air2, spin: A.maxSpin - m0 };
+    });
+    ok(dj.n === 1 && dj.vy2 < dj.vy1 - 150, `空中でおすと、もう一回跳べる (回数 ${dj.n} / 速さ ${Math.round(dj.vy1)} → ${Math.round(dj.vy2)})`);
+    ok(dj.top < dj.y1 - 40, `2 だんめで、さらに高く上がる (${Math.round(dj.y1)} → 頂点 ${Math.round(dj.top)})`);
+    ok(dj.landed && !dj.air2, '着地すると、また使える');
+    ok(dj.spin > 3, `2 だんめでくるっと回る (回った角度 ${dj.spin.toFixed(1)} rad)`);
+    await ctx.close();
+
     // ------------------------------------------------------------ 地上の乗り物
     section('スケボー・ラジコンカー (地上ステージ)');
     ({ ctx, page } = await freshPage(browser));

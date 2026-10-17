@@ -114,6 +114,7 @@
     function play(name) {
       switch (name) {
         case 'jump': tone(300, 640, 0.14, 'square', 0.07); break;
+        case 'jump2': tone(520, 1000, 0.12, 'square', 0.07); tone(800, 1500, 0.1, 'triangle', 0.08, 0.05); break;
         case 'hit': if (throttle('hit', 60)) { tone(520, 260, 0.08, 'triangle', 0.14); } break;
         case 'splash': noise(0.25, 0.4, 900, 0.7); break;
         case 'explode': noise(0.5, 0.7, 380, 0.6); tone(160, 45, 0.4, 'sine', 0.35); break;
@@ -145,6 +146,7 @@
     function event(ev) {
       switch (ev.t) {
         case 'jump': play('jump'); break;
+        case 'jump2': play('jump2'); break;
         case 'shoot': gunSound(ev.gun, { ramp: ev.ramp }); break;
         case 'charge': extraSound('charge'); break;
         case 'arc': extraSound('arc'); break;
@@ -563,12 +565,16 @@
   // ロール: 高いところから飛びおりた着地 (落ちる速さ 1000 以上) で、前へ 1 回転。
   const TURN = Math.PI * 2;
   function newAnim() {
-    return { prevGround: true, air: 0, flipOn: false, w: 0, theta: 0, maxVy: 0, ease: 0, easeFrom: 0, rollT: -1, blend: 1, trailT: 0, flips: 0, rolls: 0, maxSpin: 0, spin: 0, squash: 1 };
+    return { djSeen: 0, prevGround: true, air: 0, flipOn: false, w: 0, theta: 0, maxVy: 0, ease: 0, easeFrom: 0, rollT: -1, blend: 1, trailT: 0, flips: 0, rolls: 0, maxSpin: 0, spin: 0, squash: 1 };
   }
 
   function updateAnim(g, a, d, firing, quiet) {
     const p = g.p, grounded = p.onGround;
     const say = (type) => { const ev = { t: type, x: p.x, y: p.y - 26 }; A.handleEvent(ev); if (!quiet) Snd.event(ev); };
+    if (p.jumps2 !== a.djSeen) {                       // 2 だんジャンプ: 空中で、もう 1 回転 (すこし速く)
+      a.djSeen = p.jumps2;
+      if (!a.flipOn && !p.carry) { a.flipOn = true; a.theta = 0; a.w = TURN / 0.42; a.trailT = 0; }
+    }
     if (!grounded) {
       if (a.prevGround) { a.air = 0; a.flipOn = false; a.theta = 0; a.ease = 0; a.maxVy = 0; }
       a.air += d;
@@ -639,6 +645,7 @@
         }
         case 'dry': toast('水ぎれ! タンク💧をひろおう', 1400); break;
         case 'nope': if (g.bombs <= 0) toast('水ばくだんが ないよ', 1200); break;
+        case 'jump': app.jumpN = (app.jumpN || 0) + 1; if (app.jumpN === 5) tip('djump', '空中でもういちどジャンプできるよ(2だんジャンプ)'); break;
         case 'trip': app.shake = Math.max(app.shake, 0.15); break;
         case 'ride': toast(C.RIDES[ev.k].icon + ' ' + C.RIDES[ev.k].name + '! はやいよ' + (C.RIDES[ev.k].smash ? '\nじゃま物は ぜんぶ はね飛ばす!' : '\nぶつかると おりちゃう'), 1800); break;
         case 'unride': if (ev.why === 'time') toast('おりた', 900); break;

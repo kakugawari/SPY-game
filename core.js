@@ -138,6 +138,8 @@
     board:  { name: 'スケボー',     icon: '🛹', speed: 1.3, smash: false, sec: 14, lift: 8 },
     toycar: { name: 'ラジコンカー', icon: '🚙', speed: 1.5, smash: true,  sec: 10, lift: 15 }
   };
+  const AIR_JUMP_K = 0.85;        // 2 だんめの高さ (もとのジャンプに対する割合)
+  const AIR_JUMP_AFTER = 0.08;    // 跳んでから、2 だんめがおせるまでの秒
   const GROUND_OBS = ['cone', 'box', 'bin', 'hydrant', 'bench', 'car', 'car'];
 
   // ------------------------------------------------------------ 敵
@@ -500,7 +502,7 @@
       events: [],
       p: {
         x: 0, y: world.b[0].roofY, vx: 0, vy: 0, hw: PLAYER_HW, h: PLAYER_H,
-        onGround: true, ground: 0.1, inside: -1, stun: 0, inv: 0, carry: null, ride: null, cd: 0,
+        onGround: true, ground: 0.1, inside: -1, stun: 0, inv: 0, carry: null, ride: null, air2: false, airT: 0, jumps2: 0, cd: 0,
         anim: 0, jumping: false, blocked: false, hold: 0, charge: 0, gunPrev: null
       },
       in: { jumpHeld: false, fireHeld: false, jumpBuf: 0, doorBuf: 0, grabBuf: 0, bombBuf: 0 },
@@ -1141,6 +1143,19 @@
     p.ride = null;
   }
 
+  /**
+   * 着地のすぐ手前か。そこでおした分は、2 だんジャンプではなく、着地したらすぐ跳ぶ (先おし) に回す。
+   * 足もとのすぐ下に床があって、落ちているときだけ。
+   */
+  function nearLanding(g, p) {
+    if (p.vy <= 0) return false;
+    let base;
+    if (p.inside >= 0) base = g.world.b[p.inside].floorY;
+    else { const b = buildingAt(g.world, p.x); if (!b) return false; base = b.roofY; }
+    const d = base - p.y;
+    return d >= -2 && d < Math.max(14, p.vy * 0.12);
+  }
+
   /** 乗っているあいだの時間と、降りる条件 (時間切れ・地上の道の終わりが近い・屋内)。 */
   function stepRide(g, dt) {
     const p = g.p;
@@ -1219,13 +1234,18 @@
     if (I.jumpBuf > 0 && p.ground > 0 && p.stun <= 0) {
       p.vy = -JUMP_V; p.ground = 0; p.onGround = false; p.jumping = true; I.jumpBuf = 0;
       emit(g, 'jump', p.x, p.y);
+    } else if (I.jumpBuf > 0 && p.ground <= 0 && !p.onGround && !p.air2 && p.airT > AIR_JUMP_AFTER && p.stun <= 0 && !nearLanding(g, p)) {
+      // 2 だんジャンプ: 空中で、もう一度おす (もとのジャンプよりすこし低い)
+      p.vy = -JUMP_V * AIR_JUMP_K; p.air2 = true; p.jumping = true; p.jumps2++; I.jumpBuf = 0;
+      emit(g, 'jump2', p.x, p.y);
     }
     if (!I.jumpHeld && p.jumping && p.vy < -CUT_V) p.vy = -CUT_V;
     const was = p.onGround;
     stepBody(g, p, dt);
+    p.airT = p.onGround ? 0 : p.airT + dt;
     if (p.onGround) {
       if (!was) emit(g, 'land', p.x, p.y);
-      p.jumping = false;
+      p.jumping = false; p.air2 = false;
     }
     if (p.blocked && p.stun <= 0) {
       p.stun = 0.4; p.x -= 6;

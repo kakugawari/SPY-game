@@ -703,3 +703,70 @@ test('乗ったまま地上の道を出ない: 道の終わりの手前で降り
   const y0 = muzzle(false), y1 = muzzle(true);
   assert.ok(y0 != null && y1 != null && y0 - y1 > 10, `銃口 ${y0} → ${y1}`);
 });
+
+// ------------------------------------------------------------ 2 だんジャンプ
+function airGame() {
+  const g = Core.newGame({ seed: 7, noEnemies: true });
+  const b = g.world.b[0];
+  b.roof.obs.length = 0; b.roof.items.length = 0;
+  g.p.x = 200; g.p.y = b.roofY;
+  return { g, b };
+}
+function press(g) { Core.input(g, 'jump', true); Core.step(g, DT); }
+
+test('2 だんジャンプ: 空中でもう一度おすと、もう一回だけ跳べる。着地するとまた使える', () => {
+  const { g, b } = airGame();
+  press(g);                                           // 1 だんめ
+  Core.input(g, 'jump', false);
+  for (let i = 0; i < 12; i++) Core.step(g, DT);      // 0.2 秒ほど上がる
+  assert.ok(!g.p.onGround && !g.p.air2);
+  const vBefore = g.p.vy;
+  press(g);
+  assert.ok(g.p.air2 && g.p.vy < vBefore - 100 && g.p.vy <= -Core.JUMP_V * 0.8, `2 だんめ vy=${g.p.vy}`);
+  assert.ok(g.events.some((e) => e.t === 'jump2'));
+  g.events.length = 0;
+  for (let i = 0; i < 6; i++) Core.step(g, DT);
+  const vy = g.p.vy;
+  Core.input(g, 'jump', false); Core.input(g, 'jump', true); Core.step(g, DT);  // 3 だんめは無い
+  assert.ok(g.p.vy > vy, `3 だんめは出ない (${vy} → ${g.p.vy})`);
+  Core.input(g, 'jump', false);
+  for (let i = 0; i < 200 && !g.p.onGround; i++) Core.step(g, DT);
+  assert.ok(g.p.onGround && !g.p.air2, '着地でもどる');
+  assert.strictEqual(g.p.y, b.roofY);
+});
+
+test('2 だんジャンプ: 1 だんより高く (合わせて) 上がる / しびれ中・着地すぐ前のおしでは出ない', () => {
+  const peak = (second) => {
+    const { g } = airGame();
+    press(g);                                         // おしっぱなし (jumpHeld のまま)
+    let top = g.p.y;
+    for (let i = 0; i < 200 && !(g.p.onGround && i > 5); i++) {
+      if (second && i === 14) { Core.input(g, 'jump', false); press(g); }
+      Core.step(g, DT); top = Math.min(top, g.p.y);
+    }
+    return top;
+  };
+  const one = peak(false), two = peak(true);
+  assert.ok(two < one - 40, `頂点 ${one.toFixed(0)} → ${two.toFixed(0)}`);
+  // しびれ中は出ない
+  const { g } = airGame();
+  press(g); Core.input(g, 'jump', false);
+  for (let i = 0; i < 12; i++) Core.step(g, DT);
+  g.p.stun = 0.3; press(g);
+  assert.ok(!g.p.air2, 'しびれ中は 2 だんめが出ない');
+  // 着地の直前のおしは 2 だんめにせず、着地したらすぐ跳ぶ (先おし)
+  const h = airGame().g;
+  h.p.y = h.world.b[0].roofY - 20; h.p.vy = 600; h.p.onGround = false; h.p.ground = 0; h.p.airT = 0.5;
+  press(h);
+  assert.ok(!h.p.air2, '着地すぐ前は 2 だんめにしない');
+  for (let i = 0; i < 12 && !h.events.some((e) => e.t === 'jump'); i++) Core.step(h, DT);
+  assert.ok(h.events.some((e) => e.t === 'jump'), '先おしは着地でふつうのジャンプになる');
+});
+
+test('2 だんジャンプは、谷の保証を変えない: 自動プレイは今までどおり走りきる (使わない)', () => {
+  const g = Core.newGame({ seed: 3, noEnemies: true });
+  const st = makeBot();
+  for (let i = 0; i < 60 * 40 && !g.over; i++) { botStep(g, st, DT); Core.step(g, DT); g.events.length = 0; }
+  assert.strictEqual(g.over, null);
+  assert.strictEqual(g.p.jumps2, 0);
+});

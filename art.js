@@ -1039,6 +1039,11 @@
       case 'land':
         for (let i = 0; i < (ev.t === 'land' ? 5 : 3); i++) addFx({ k: 'puff', x: ev.x + (Math.random() - 0.5) * 12, y: ev.y - 2, vx: (Math.random() - 0.6) * 60, vy: -Math.random() * 20, r: 3 + Math.random() * 3, life: 0.35, max: 0.35 });
         break;
+      case 'jump2':
+        addFx({ k: 'ring', x: ev.x, y: ev.y - 2, r: 5, max: 30, life: 0.3, col: 'rgba(255,255,255,.9)' });
+        for (let i = 0; i < 6; i++) addFx({ k: 'puff', x: ev.x + (Math.random() - 0.5) * 22, y: ev.y - 2, vx: (Math.random() - 0.5) * 90, vy: Math.random() * 20, r: 3 + Math.random() * 3, life: 0.35, max: 0.35 });
+        addFx({ k: 'text', x: ev.x, y: ev.y - 46, vy: -46, txt: 'もういっちょ!', col: '#d6f5ff', life: 0.6, size: 13 });
+        break;
       case 'flip': {
         const words = ['くるっ!', 'バク転!', 'ひらり!', 'とうっ!'];
         if (Math.random() < 0.55) addFx({ k: 'text', x: ev.x - 8, y: ev.y - 46, vy: -46, txt: words[Math.floor(Math.random() * words.length)], col: '#fff7c2', life: 0.7, size: 14 });

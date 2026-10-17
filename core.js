@@ -122,25 +122,39 @@
   const PROP_KEYS = Object.keys(PROPS);
 
   // w >= 50 の物 (車) は、ちょん跳びでは越えられず、押しつづけた高いジャンプが要る
-  const OBSTACLES = {
-    cone:    { w: 16, h: 22 },
-    box:     { w: 28, h: 30 },
-    vent:    { w: 34, h: 20 },
-    bin:     { w: 22, h: 28 },
-    hydrant: { w: 16, h: 26 },
-    bench:   { w: 40, h: 20 },
-    car:     { w: 64, h: 34 }
+  /** 宝石 (怪盗のおたから)。value = 宝石ポイント。きたえる (じぶんの強化) の代金になる。w = 出やすさ */
+  const GEMS = {
+    ruby:     { name: 'ルビー',       icon: '🔴', value: 1,  w: 55 },
+    sapphire: { name: 'サファイア',   icon: '🔷', value: 2,  w: 30 },
+    emerald:  { name: 'エメラルド',   icon: '🟢', value: 4,  w: 12 },
+    diamond:  { name: 'ダイヤモンド', icon: '💎', value: 10, w: 3 }
   };
-  const OBS_KEYS = Object.keys(OBSTACLES);
-  const ROOF_OBS = ['cone', 'box', 'vent'];
-  /** 地上で乗れる物。speed = はやさの倍率 / smash = ぶつかった物をはね飛ばす (スケボーは、ぶつかるところんで降りる) / sec = 乗っていられる時間 */
+  const GEM_KEYS = Object.keys(GEMS);
+  /** 高い所 (tier 2) の宝石ほど良いものが出る。tier 0 = 部屋のなか / 1 = 長おしジャンプで届く / 2 = 2 だんジャンプで届く */
+  function pickGem(r, tier) {
+    const mul = [1, 1.4, 2.4][tier || 0];
+    const w = GEM_KEYS.map((k, i) => GEMS[k].w * (i === 0 ? 1 : mul * (i === 3 ? mul : 1)));
+    let v = r() * w.reduce((a, b) => a + b, 0);
+    for (let i = 0; i < w.length; i++) { v -= w[i]; if (v < 0) return GEM_KEYS[i]; }
+    return GEM_KEYS[0];
+  }
+  const GEM_Y = [26, 100, 200];   // 足もとから宝石までの高さ (tier ごと)
+
+  /** じぶんの強化 (きたえる)。1 レベルごとの伸び。値段は gemCost(レベル)。 */
+  const UPGRADES = {
+    jump:  { name: 'ジャンプりょく', icon: '🦘', per: 0.04, max: 10, desc: '高く跳べる' },
+    power: { name: 'みずの ちから',  icon: '💪', per: 0.12, max: 10, desc: '水でっぽうも ばくだんも 強くなる' },
+    tank:  { name: 'タンク',         icon: '🛢️', per: 0.03, max: 10, desc: '水の へりが ゆっくりになる' }
+  };
+  function gemCost(level) { return 6 + 4 * level; }              // いまのレベルから、つぎへ
+
+  /** 地上で乗れる物。speed = はやさの倍率 / shield = 敵につかまりそうになると、はね飛ばして守る / sec = 乗っていられる時間 */
   const RIDES = {
-    board:  { name: 'スケボー',     icon: '🛹', speed: 1.3, smash: false, sec: 14, lift: 8 },
-    toycar: { name: 'ラジコンカー', icon: '🚙', speed: 1.5, smash: true,  sec: 10, lift: 15 }
+    board:  { name: 'スケボー',     icon: '🛹', speed: 1.3, shield: false, sec: 14, lift: 8 },
+    toycar: { name: 'ラジコンカー', icon: '🚙', speed: 1.5, shield: true,  sec: 10, lift: 15 }
   };
   const AIR_JUMP_K = 0.85;        // 2 だんめの高さ (もとのジャンプに対する割合)
   const AIR_JUMP_AFTER = 0.08;    // 跳んでから、2 だんめがおせるまでの秒
-  const GROUND_OBS = ['cone', 'box', 'bin', 'hydrant', 'bench', 'car', 'car'];
 
   // ------------------------------------------------------------ 敵
   const ENEMIES = {
@@ -212,30 +226,22 @@
     return b;
   }
 
-  /** 地上の道の中身: じゃま物 (車・ゴミ箱・消火栓・ベンチ・コーン・箱) が 190〜330px おきにならぶ。 */
+  /** 地上の道の中身: 谷もじゃま物も無い 1 本道。乗り物・宝石・コイン・投げられる物がならぶ。 */
   function populateGround(world, b, prev, r) {
-    b.roof = { items: [], props: [], obs: [] };
-    b.room = { items: [], props: [], obs: [] };
+    b.roof = { items: [], props: [] };
+    b.room = { items: [], props: [] };
     const far = (x, arr, d) => arr.every((o) => Math.abs(o.x - x) >= d);
     const entering = !prev || !prev.ground || b.x > prev.x + prev.w;
     const sEnd = stageOf(b.x) * STAGE_PX;
     const lastSeg = b.x + b.w >= sEnd - 1;
-    let lo = entering ? b.x + 95 : b.x + 20;
-    if (!entering && world.lastGroundObsX != null) lo = Math.max(lo, world.lastGroundObsX + 190);
-    const hi = lastSeg ? b.x + b.w - 150 : b.x + b.w - 20;
-    let x = lo + r() * 60;
-    while (x <= hi) {
-      const t = pick(r, GROUND_OBS);
-      b.roof.obs.push({ x: Math.round(x), t: t });
-      world.lastGroundObsX = Math.round(x);
-      x += 190 + r() * 140;
-    }
+    const lo = b.x + (entering ? 95 : 20);
+    const hi = b.x + b.w - (lastSeg ? 150 : 20);
     // 投げられる物
     const nProps = Math.floor(b.w / 330);
     for (let k = 0; k < nProps; k++) {
       for (let tries = 0; tries < 8; tries++) {
         const px = Math.round(b.x + 50 + r() * Math.max(10, b.w - 120));
-        if (!far(px, b.roof.obs, 50) || !far(px, b.roof.props, 60)) continue;
+        if (!far(px, b.roof.props, 60)) continue;
         b.roof.props.push({ x: px, t: pick(r, PROP_KEYS) });
         break;
       }
@@ -245,7 +251,7 @@
       if (r() < 0.55) {
         for (let tries = 0; tries < 8; tries++) {
           const px = Math.round(b.x + 60 + r() * Math.max(10, b.w - 140));
-          if (!far(px, b.roof.obs, 45) || !far(px, b.roof.props, 30) || !far(px, b.roof.items, 30)) continue;
+          if (!far(px, b.roof.props, 30) || !far(px, b.roof.items, 30)) continue;
           b.roof.items.push({ x: px, y: b.roofY - 24, t: pickSpecial(r) });
           break;
         }
@@ -256,13 +262,25 @@
       if (r() < 0.7) {
         for (let tries = 0; tries < 8; tries++) {
           const px = Math.round(b.x + 60 + r() * Math.max(10, b.w - 260));
-          if (!far(px, b.roof.obs, 60) || !far(px, b.roof.props, 40) || !far(px, b.roof.items, 40)) continue;
+          if (!far(px, b.roof.props, 40) || !far(px, b.roof.items, 40)) continue;
           b.roof.items.push({ x: px, y: b.roofY - 22, t: r() < 0.6 ? 'board' : 'toycar' });
           break;
         }
       }
     }
-    // コインの列 (じゃま物の上は高く = 跳べという合図)
+    // 宝石: 400px につき 6 割で 1 つ。長おしジャンプで届く高さ (ときどき、2 だんジャンプの高さ)
+    for (let k = 0; k < Math.floor(b.w / 400); k++) {
+      if (r() < 0.6) {
+        const tier = r() < 0.7 ? 1 : 2;
+        for (let tries = 0; tries < 8; tries++) {
+          const px = Math.round(lo + r() * Math.max(10, hi - lo));
+          if (!far(px, b.roof.items, 40)) continue;
+          b.roof.items.push({ x: px, y: b.roofY - GEM_Y[tier], t: 'gem', k: pickGem(r, tier) });
+          break;
+        }
+      }
+    }
+    // コインの列
     const nLines = Math.max(1, Math.floor(b.w / 260));
     for (let k = 0; k < nLines; k++) {
       if (r() < 0.65) {
@@ -271,9 +289,8 @@
         for (let q = 0; q < n; q++) {
           const cx = Math.round(x0 + q * 30);
           if (cx > b.x + b.w - 20) break;
-          const over = b.roof.obs.some((o) => Math.abs(o.x - cx) < 40);
           if (b.roof.items.some((it) => Math.abs(it.x - cx) < 22)) continue;
-          b.roof.items.push({ x: cx, y: b.roofY - (over ? 70 : 26), t: 'coin' });
+          b.roof.items.push({ x: cx, y: b.roofY - 26, t: 'coin' });
         }
       }
     }
@@ -292,24 +309,10 @@
   function populate(world, b, prev, r) {
     if (b.ground) { populateGround(world, b, prev, r); return; }
     const i = b.i;
-    b.roof = { items: [], props: [], obs: [] };
-    b.room = { items: [], props: [], obs: [] };
+    b.roof = { items: [], props: [] };
+    b.room = { items: [], props: [] };
     const far = (x, arr, d) => arr.every((o) => Math.abs(o.x - x) >= d);
 
-    // --- 屋上: じゃま物 (とびこえる)
-    let lo = b.x + 95;
-    const hi = b.x + b.w - 150;
-    if (i === 0) lo = 300;
-    const nObs = i === 0 ? 1 : Math.floor(r() * 3);
-    for (let k = 0; k < nObs && hi > lo + 10; k++) {
-      for (let tries = 0; tries < 8; tries++) {
-        const x = Math.round(lo + r() * (hi - lo));
-        if (!far(x, b.roof.obs, 170)) continue;
-        if (b.door && Math.abs(x - b.doorX) < 80) continue;
-        b.roof.obs.push({ x: x, t: pick(r, ROOF_OBS) });
-        break;
-      }
-    }
     // --- 屋上: 投げられる物
     if (i === 0) {
       b.roof.props.push({ x: 150, t: 'crate' });
@@ -317,7 +320,7 @@
     } else if (r() < 0.55) {
       for (let tries = 0; tries < 8; tries++) {
         const x = Math.round(b.x + 50 + r() * Math.max(10, b.w - 140));
-        if (!far(x, b.roof.obs, 45) || !far(x, b.roof.props, 40)) continue;
+        if (!far(x, b.roof.props, 40)) continue;
         if (b.door && Math.abs(x - b.doorX) < 45) continue;
         b.roof.props.push({ x: x, t: pick(r, PROP_KEYS) });
         break;
@@ -327,21 +330,26 @@
     if (i > 0 && r() < 0.3) {
       for (let tries = 0; tries < 8; tries++) {
         const x = Math.round(b.x + 60 + r() * Math.max(10, b.w - 170));
-        if (!far(x, b.roof.obs, 40) || !far(x, b.roof.props, 30)) continue;
+        if (!far(x, b.roof.props, 30)) continue;
         if (b.door && Math.abs(x - b.doorX) < 40) continue;
         b.roof.items.push({ x: x, y: b.roofY - 24, t: pickSpecial(r) });
         break;
       }
     }
-    // --- 屋上: コインの列。じゃま物の上は高く (跳べという合図)
+    // --- 屋上: 宝石 (高い所にある。長おしジャンプか 2 だんジャンプで取る)
+    if (i > 0 && r() < 0.45) {
+      const tier = r() < 0.6 ? 1 : 2;
+      const x = Math.round(b.x + 80 + r() * Math.max(10, b.w - 240));
+      if (!(b.door && Math.abs(x - b.doorX) < 40) && far(x, b.roof.props, 30)) b.roof.items.push({ x: x, y: b.roofY - GEM_Y[tier], t: 'gem', k: pickGem(r, tier) });
+    }
+    // --- 屋上: コインの列
     if (i > 0 && r() < 0.55) {
       const n = 4 + Math.floor(r() * 3);
       const x0 = b.x + 60 + r() * Math.max(10, b.w - 260);
       for (let k = 0; k < n; k++) {
         const x = Math.round(x0 + k * 30);
         if (x > b.x + b.w - 30) break;
-        const over = b.roof.obs.some((o) => Math.abs(o.x - x) < 36);
-        b.roof.items.push({ x: x, y: b.roofY - (over ? 66 : 26), t: 'coin' });
+        b.roof.items.push({ x: x, y: b.roofY - 26, t: 'coin' });
       }
     }
     // --- 手前の谷にかかるコインの弧
@@ -360,30 +368,25 @@
     if (b.door) {
       const a = b.doorX + 110;
       const z = b.exitX - 90;
-      const nIn = Math.floor(r() * 3);
-      for (let k = 0; k < nIn && z > a + 10; k++) {
-        for (let tries = 0; tries < 8; tries++) {
-          const x = Math.round(a + r() * (z - a));
-          if (!far(x, b.room.obs, 170)) continue;
-          b.room.obs.push({ x: x, t: pick(r, ROOF_OBS) });
-          break;
-        }
-      }
       if (r() < 0.6) {
         const x = Math.round(b.doorX + 60 + r() * (b.exitX - b.doorX - 100));
-        if (far(x, b.room.obs, 45)) b.room.props.push({ x: x, t: pick(r, PROP_KEYS) });
+        b.room.props.push({ x: x, t: pick(r, PROP_KEYS) });
       }
       const n = 4 + Math.floor(r() * 5);
       const x0 = b.doorX + 50 + r() * 20;
       for (let k = 0; k < n; k++) {
         const x = Math.round(x0 + k * 30);
         if (x > b.exitX - 20) break;
-        const over = b.room.obs.some((o) => Math.abs(o.x - x) < 36);
-        b.room.items.push({ x: x, y: b.floorY - (over ? 66 : 26), t: 'coin' });
+        b.room.items.push({ x: x, y: b.floorY - 26, t: 'coin' });
       }
       if (r() < 0.6) {
         const x = Math.round(b.doorX + 120 + r() * Math.max(10, b.exitX - b.doorX - 200));
-        if (far(x, b.room.obs, 45)) b.room.items.push({ x: x, y: b.floorY - 24, t: pickSpecial(r) });
+        b.room.items.push({ x: x, y: b.floorY - 24, t: pickSpecial(r) });
+      }
+      // ビルの中のお宝 (入ったごほうび。部屋の奥)
+      if (r() < 0.55) {
+        const x = Math.round(b.exitX - 60 - r() * Math.max(10, (b.exitX - b.doorX) * 0.4));
+        b.room.items.push({ x: x, y: b.floorY - GEM_Y[0], t: 'gem', k: pickGem(r, 0) });
       }
     }
   }
@@ -512,6 +515,9 @@
       bombs: opts.bombs != null ? opts.bombs : 3,
       coins: 0,
       kills: 0,
+      gems: 0, gemKinds: {},
+      up: { jump: 0, power: 0, tank: 0 },
+      jumpK: 1, dmgK: 1, costK: 1,
       stage: 1,
       enemies: [],
       shots: [],
@@ -524,6 +530,11 @@
       dryT: 0,
       noGift: false
     };
+    const up = opts.up || {};
+    for (const k in UPGRADES) g.up[k] = Math.max(0, Math.min(UPGRADES[k].max, Math.floor(up[k] || 0)));
+    g.jumpK = 1 + UPGRADES.jump.per * g.up.jump;
+    g.dmgK = 1 + UPGRADES.power.per * g.up.power;
+    g.costK = 1 - UPGRADES.tank.per * g.up.tank;
     if (!g.noEnemies) spawnEnemy(g, 'suit', -170);
     return g;
   }
@@ -638,23 +649,7 @@
         if (!b) return { until: o.x + 120 };
       }
     }
-    const list = o.inside >= 0 ? w.b[o.inside].room.obs : nearbyObs(g, o.x);
-    for (const ob of list) {
-      const d = ob.x - o.x;
-      const wide = OBSTACLES[ob.t].w >= 50;                     // 車: 押しつづけた高いジャンプで、まんなかを過ぎたら離す
-      if (d > -4 && d < speed * (wide ? 0.3 : 0.18)) return { until: wide ? ob.x + 14 : o.x };   // ふつうはちょん跳び: すぐ離す
-    }
     return null;
-  }
-
-  function nearbyObs(g, x) {
-    const j = indexNear(g.world, x);
-    const out = [];
-    for (let k = Math.max(0, j - 1); k <= j + 1 && k < g.world.b.length; k++) {
-      const arr = g.world.b[k].roof.obs;
-      for (let q = 0; q < arr.length; q++) out.push(arr[q]);
-    }
-    return out;
   }
 
   function stepEnemy(g, e, dt) {
@@ -754,7 +749,7 @@
   function applyHit(g, e, h, x, y) {
     if (e.state !== 'chase') return;
     const T = ENEMIES[e.type];
-    e.hp -= h.dmg || 0;
+    e.hp -= (h.dmg || 0) * g.dmgK;
     e.flash = 0.12;
     if (h.wet) e.wet = Math.min(3, e.wet + h.wet);
     if (h.push) {
@@ -877,7 +872,7 @@
     } else {
       p.cd = gun.cd;
     }
-    g.water = Math.max(0, g.water - gun.cost);
+    g.water = Math.max(0, g.water - gun.cost * g.costK);
     emit(g, 'shoot', sx, sy, { gun: gun.id, ramp: ramp });
   }
 
@@ -1113,24 +1108,6 @@
           takeItem(g, it);
         }
       }
-      if (p.stun <= 0 && p.inv <= 0) {
-        for (const ob of L.obs) {
-          const O = OBSTACLES[ob.t];
-          const top = baseY(b, p.inside) - O.h;
-          if (Math.abs(ob.x - p.x) < O.w / 2 + p.hw - 2 && p.y > top + 6 && p.y - p.h < baseY(b, p.inside)) {
-            if (p.ride && RIDES[p.ride.k].smash) {                  // ラジコンカーは、ぶつかった物をはね飛ばして走りぬける
-              L.obs.splice(L.obs.indexOf(ob), 1);
-              g.coins += 2;
-              emit(g, 'smash', ob.x, baseY(b, p.inside), { k: ob.t });
-              break;
-            }
-            p.stun = 0.45; p.inv = 0.8; p.x -= 6;
-            emit(g, 'trip', p.x, p.y, { k: ob.t });
-            if (p.ride) endRide(g, 'crash');
-            break;
-          }
-        }
-      }
     }
   }
 
@@ -1177,6 +1154,11 @@
     } else if (it.t === 'bomb') {
       g.bombs = Math.min(9, g.bombs + 1);
       emit(g, 'item', it.x, it.y, { k: 'bomb' });
+    } else if (it.t === 'gem') {
+      const G = GEMS[it.k];
+      g.gems += G.value;
+      g.gemKinds[it.k] = (g.gemKinds[it.k] || 0) + 1;
+      emit(g, 'gem', it.x, it.y, { k: it.k, n: G.value });
     } else if (RIDES[it.t]) {
       p.ride = { k: it.t, t: RIDES[it.t].sec };
       emit(g, 'ride', it.x, it.y, { k: it.t });
@@ -1232,11 +1214,11 @@
     p.vx = p.stun > 0 ? 0 : speedAt(p.x) * (p.ride ? RIDES[p.ride.k].speed : 1);
     if (p.onGround) p.ground = 0.1; else p.ground -= dt;
     if (I.jumpBuf > 0 && p.ground > 0 && p.stun <= 0) {
-      p.vy = -JUMP_V; p.ground = 0; p.onGround = false; p.jumping = true; I.jumpBuf = 0;
+      p.vy = -JUMP_V * g.jumpK; p.ground = 0; p.onGround = false; p.jumping = true; I.jumpBuf = 0;
       emit(g, 'jump', p.x, p.y);
     } else if (I.jumpBuf > 0 && p.ground <= 0 && !p.onGround && !p.air2 && p.airT > AIR_JUMP_AFTER && p.stun <= 0 && !nearLanding(g, p)) {
       // 2 だんジャンプ: 空中で、もう一度おす (もとのジャンプよりすこし低い)
-      p.vy = -JUMP_V * AIR_JUMP_K; p.air2 = true; p.jumping = true; p.jumps2++; I.jumpBuf = 0;
+      p.vy = -JUMP_V * g.jumpK * AIR_JUMP_K; p.air2 = true; p.jumping = true; p.jumps2++; I.jumpBuf = 0;
       emit(g, 'jump2', p.x, p.y);
     }
     if (!I.jumpHeld && p.jumping && p.vy < -CUT_V) p.vy = -CUT_V;
@@ -1283,16 +1265,16 @@
     p.hold = trigger ? p.hold + dt : 0;                   // 押しつづけた秒数 (離すと 0)
     if (gun.windup) {
       // ため撃ち: 押しつづけて「ため」が終わると撃つ。途中で離すとやりなおし
-      if (trigger && p.cd <= 0 && g.water >= gun.cost) {
+      if (trigger && p.cd <= 0 && g.water >= gun.cost * g.costK) {
         if (p.charge === 0) emit(g, 'charge', p.x, p.y, { gun: gun.id });
         p.charge += dt;
         if (p.charge >= gun.windup) { fireGun(g); p.charge = 0; }
       } else {
         p.charge = Math.max(0, p.charge - dt * 3);
-        if (trigger && p.cd <= 0 && g.water < gun.cost) { p.cd = 0.25; if (g.dryT <= 0) { emit(g, 'dry', p.x, p.y); g.dryT = 1; } }
+        if (trigger && p.cd <= 0 && g.water < gun.cost * g.costK) { p.cd = 0.25; if (g.dryT <= 0) { emit(g, 'dry', p.x, p.y); g.dryT = 1; } }
       }
     } else if (trigger && p.cd <= 0) {
-      if (g.water >= gun.cost) fireGun(g);
+      if (g.water >= gun.cost * g.costK) fireGun(g);
       else { p.cd = 0.25; if (g.dryT <= 0) { emit(g, 'dry', p.x, p.y); g.dryT = 1; } }
     }
     if (I.bombBuf > 0) {
@@ -1322,6 +1304,11 @@
       if (d < danger) danger = d;
       const eBottom = e.y, eTop = e.y - e.h;
       if (Math.abs(p.x - e.x) < p.hw + e.w / 2 - 4 && p.y > eTop + 4 && p.y - p.h < eBottom - 2) {
+        if (p.ride && RIDES[p.ride.k].shield) {                  // ラジコンカーは、ぶつかった敵をはね飛ばす
+          defeat(g, e, false);
+          emit(g, 'smash', e.x, e.y, { k: 'enemy' });
+          continue;
+        }
         g.over = 'caught';
         emit(g, 'caught', p.x, p.y);
         return;
@@ -1343,7 +1330,7 @@
     // 定数
     G: G, JUMP_V: JUMP_V, CUT_V: CUT_V, KILL_Y: KILL_Y, FLOOR_OFF: FLOOR_OFF, THROW_G: THROW_G,
     PLAYER_HW: PLAYER_HW, PLAYER_H: PLAYER_H,
-    GUNS: GUNS, GUN_BY_ID: GUN_BY_ID, PROPS: PROPS, RIDES: RIDES, OBSTACLES: OBSTACLES, ENEMIES: ENEMIES,
+    GUNS: GUNS, GUN_BY_ID: GUN_BY_ID, PROPS: PROPS, RIDES: RIDES, GEMS: GEMS, GEM_Y: GEM_Y, UPGRADES: UPGRADES, gemCost: gemCost, ENEMIES: ENEMIES,
     // 乱数
     mulberry32: mulberry32, shuffle: shuffle,
     // 世界

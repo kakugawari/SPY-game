@@ -24,7 +24,7 @@
     <div id="hud" hidden>
       <div class="hud-left">
         <div class="hud-dist"><b id="hDist">0</b><small>m</small></div>
-        <div class="hud-coin"><span class="coin-dot"></span><b id="hCoins">0</b></div>
+        <div class="hud-coin"><span class="coin-dot"></span><b id="hCoins">0</b><span class="hud-gem"><i class="gem-dot"></i><b id="hGems">0</b></span></div>
         <div class="hud-stage"><span id="hStage">ステージ 1</span><i><b id="hStageBar"></b></i></div>
       </div>
       <div class="hud-center">
@@ -52,10 +52,11 @@
         <button type="button" id="btnShop" class="big-btn blue"><span class="bi">🔫</span><span class="bl">ぶきや</span></button>
         <div class="title-meta">
           <span class="meta-chip"><span class="coin-dot"></span><b id="tCoins">0</b></span>
+          <span class="meta-chip"><i class="gem-dot"></i><b id="tGems">0</b></span>
           <span class="meta-chip">ベスト <b id="tBest">0</b>m</span>
           <button type="button" id="btnSound" class="meta-chip btn-chip" aria-label="おと"><span id="soundLabel">🔊 おと</span></button>
         </div>
-        <p class="how">うしろから追ってくる白スーツの動物スパイから、屋上を走って逃げよう。<br>谷はジャンプ。とびらから<b>ビルの中</b>を抜ければ近道!<br><b>200m</b>ごとに次のステージ。ゴールは無いよ!</p>
+        <p class="how">うしろから追ってくる白スーツの動物スパイから、屋上を走って逃げよう。<br>谷はジャンプ。とびらから<b>ビルの中</b>を抜ければ近道!<br><b>200m</b>ごとに次のステージ。<b>宝石💎</b>を盗んで強くなろう!</p>
       </div>
     </section>
 
@@ -65,8 +66,13 @@
         <button type="button" id="btnShopBack" class="round-btn" aria-label="もどる">‹</button>
         <h2>ぶきや</h2>
         <div class="meta-chip"><span class="coin-dot"></span><b id="sCoins">0</b></div>
+        <div class="meta-chip"><i class="gem-dot"></i><b id="sGems">0</b></div>
       </header>
-      <p class="shop-note">コインで水でっぽうを買おう。<b>「つかう」</b>で、はじめに持つ1丁をえらべるよ。(あそんでいる間は ぜんぶ切りかえられる)</p>
+      <div class="shop-tabs" role="tablist">
+        <button type="button" id="tabGuns" class="shop-tab on" role="tab">🔫 ぶき</button>
+        <button type="button" id="tabTrain" class="shop-tab" role="tab">💪 きたえる</button>
+      </div>
+      <p class="shop-note" id="shopNote">コインで水でっぽうを買おう。<b>「つかう」</b>で、はじめに持つ1丁をえらべるよ。(あそんでいる間は ぜんぶ切りかえられる)</p>
       <div id="shopList" class="shop-list"></div>
     </section>
 
@@ -80,7 +86,9 @@
           <div><span>ステージ</span><b id="rStage">1</b></div>
           <div><span>コイン</span><b id="rCoins">0</b></div>
           <div><span>やっつけた</span><b id="rKills">0</b></div>
+          <div><span>宝石</span><b id="rGem">0</b></div>
         </div>
+        <p id="rGems" class="r-gems" hidden></p>
         <p class="r-best">ベスト <b id="rBest">0</b>m</p>
         <div class="r-btns">
           <button type="button" id="btnAgain" class="big-btn pink small"><span class="bi">↻</span><span class="bl">もういちど</span></button>

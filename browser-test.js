@@ -344,7 +344,7 @@ async function run() {
     await page.waitForFunction(() => window.__app.game().p.inside >= 0, null, { timeout: 1500 }).catch(() => {});
     const inside = await page.evaluate(() => window.__app.game().p.inside);
     ok(inside === await page.evaluate(() => window.__doorB), `タップするとビルの中に入る (inside=${inside})`);
-    // 中を抜けて出口から出る (じゃま物は跳ぶ)
+    // 中を抜けて出口から出る
     await installBot(page);
     await page.evaluate(() => { window.__auto = true; });
     await page.waitForFunction(() => window.__app.game().p.inside < 0, null, { timeout: 5000 }).catch(() => {});
@@ -699,30 +699,29 @@ async function run() {
     page.on('pageerror', (e) => errors.push('乗り物: ' + e.message));
     await page.evaluate(() => window.__app.start({ seed: 11, noEnemies: true }));
     await sleep(300);
-    const setStreet = (kind, obs) => page.evaluate(({ kind, obs }) => {
+    const setStreet = (kind) => page.evaluate(({ kind }) => {
       const g = window.__app.game(), C = window.Core;
       C.ensure(g.world, 8000 * 3);
       const b = g.world.b.find((q) => q.ground);
       g.stage = 2; g.p.ride = null;
       g.p.x = b.x + 40; g.p.y = b.roofY; g.p.vy = 0; g.p.inside = -1; g.p.stun = 0; g.p.inv = 0; g.p.onGround = true;
-      b.roof.items.length = 0; b.roof.obs.length = 0;
+      for (const q of g.world.b) q.roof.items.length = 0;
       b.roof.items.push({ x: b.x + 90, y: b.roofY - 22, t: kind });
-      if (obs) b.roof.obs.push({ x: b.x + 330, t: obs });
       return b.x;
-    }, { kind, obs });
-    // ひろうと乗る (スケボー)。ちゅうは、ぶつかると降りる
+    }, { kind });
+    // ひろうと乗る (スケボー)
     await page.evaluate(() => { window.__toasts = []; new MutationObserver(() => window.__toasts.push(document.getElementById('toast').textContent)).observe(document.getElementById('toast'), { childList: true, characterData: true, subtree: true }); });
-    await setStreet('board', 'bin');
+    await setStreet('board');
     await sleep(400);
     const rb = await page.evaluate(() => { const g = window.__app.game(); return { ride: g.p.ride && g.p.ride.k, vx: g.p.vx, base: window.Core.speedAt(g.p.x) }; });
     ok(rb.ride === 'board' && rb.vx > rb.base * 1.25, `スケボーを拾うと乗って、速くなる (${rb.ride} / ${Math.round(rb.vx)} ← ${Math.round(rb.base)})`);
     const toastTxt = (await page.evaluate(() => window.__toasts)).join(' | ');
     ok(/スケボー/.test(toastTxt), `乗ったことが画面に出る (${toastTxt.replace(/\n/g, ' ')})`);
     await sleep(900);
-    const rb2 = await page.evaluate(() => { const g = window.__app.game(); return { ride: g.p.ride, stun: g.p.stun, over: g.over }; });
-    ok(!rb2.ride, `スケボーは、じゃま物にぶつかると降りる (のこり ${JSON.stringify(rb2.ride)})`);
-    // ラジコンカー: ぶつかったじゃま物をはね飛ばす。車の絵が出る (ボディの黄色い画素)
-    await setStreet('toycar', 'bench');
+    const rb2 = await page.evaluate(() => { const g = window.__app.game(); return { ride: g.p.ride && g.p.ride.k, over: g.over }; });
+    ok(rb2.ride === 'board' && !rb2.over, `スケボーは、道に障害物が無いので、そのまま走れる (${rb2.ride})`);
+    // ラジコンカー: 車の絵が出る (ボディの黄色い画素)
+    await setStreet('toycar');
     await sleep(300);
     const px = () => page.evaluate(() => {
       const cv = document.getElementById('cv'), c = cv.getContext('2d');
@@ -733,20 +732,78 @@ async function run() {
     });
     const withCar = await px();
     await sleep(900);
-    const rc = await page.evaluate(() => { const g = window.__app.game(); return { ride: g.p.ride && g.p.ride.k, obs: g.world.b.find((q) => q.ground).roof.obs.length, over: g.over }; });
-    ok(rc.ride === 'toycar' && rc.obs === 0 && !rc.over, `ラジコンカーはベンチをはね飛ばして、乗ったまま走る (${rc.ride} / のこりじゃま物 ${rc.obs})`);
+    const rc = await page.evaluate(() => { const g = window.__app.game(); return { ride: g.p.ride && g.p.ride.k, over: g.over }; });
+    ok(rc.ride === 'toycar' && !rc.over, `ラジコンカーに乗って走る (${rc.ride})`);
     ok(withCar > 150, `ラジコンカーの絵が出る (黄色い画素 ${withCar})`);
     // 地上の道を出る前に降りる
     const off = await page.evaluate(async () => {
       const g = window.__app.game(), C = window.Core;
       const b = g.world.b.filter((q) => q.ground && C.stageOf(q.x) === 2).pop();
       g.p.x = b.x + b.w - 360; g.p.y = b.roofY; g.p.ride = { k: 'board', t: 99 };
-      b.roof.obs.length = 0; b.roof.items.length = 0;
+      b.roof.items.length = 0;
       const t0 = performance.now();
       while (g.p.ride && performance.now() - t0 < 3000) await new Promise((r) => setTimeout(r, 30));
       return { ride: !!g.p.ride, left: Math.round(b.x + b.w - g.p.x) };
     });
     ok(!off.ride && off.left > 60, `道の終わりの手前で降りる (終わりまであと ${off.left}px)`);
+    await ctx.close();
+
+    // ------------------------------------------------------------ 宝石・きたえる
+    section('宝石・きたえる');
+    ({ ctx, page } = await freshPage(browser));
+    page.on('pageerror', (e) => errors.push('宝石: ' + e.message));
+    await page.evaluate(() => window.__app.start({ seed: 21, noEnemies: true }));
+    await sleep(300);
+    // 目の前に宝石を置いて、取る
+    await page.evaluate(() => { window.__toasts2 = []; new MutationObserver(() => window.__toasts2.push(document.getElementById('toast').textContent)).observe(document.getElementById('toast'), { childList: true, characterData: true, subtree: true }); });
+    const gm = await page.evaluate(async () => {
+      const g = window.__app.game(), w = (ms) => new Promise((r) => setTimeout(r, ms));
+      const b = g.world.b[0];
+      g.p.x = 20; g.p.y = b.roofY; g.p.vy = 0; g.p.onGround = true; g.p.stun = 0; g.p.inv = 0;
+      b.roof.items.push({ x: 60, y: b.roofY - 26, t: 'gem', k: 'emerald' }, { x: 66, y: b.roofY - 26, t: 'gem', k: 'ruby' });
+      await w(500);
+      return { gems: g.gems, kinds: g.gemKinds, hud: document.getElementById('hGems').textContent, toast: window.__toasts2.join(' | ') };
+    });
+    ok(gm.gems === 5 && gm.hud === '5', `宝石を取ると、ポイント (エメラルド 4 + ルビー 1) が入って、画面にも出る (${gm.gems} / HUD ${gm.hud})`);
+    ok(/宝石/.test(gm.toast), `はじめて取ると、使いみちが出る (${gm.toast.replace(/\n/g, ' ')})`);
+    // 終わると、保存に積む。けっかにも出る
+    await page.evaluate(() => { const g = window.__app.game(); g.over = 'fell'; });
+    await page.waitForFunction(() => window.__app.state().mode === 'result');
+    const gres = await page.evaluate(() => ({ save: window.__app.save(), rGem: document.getElementById('rGem').textContent, rGems: document.getElementById('rGems').textContent, hidden: document.getElementById('rGems').hidden }));
+    ok(gres.save.gems === 5 && gres.save.gemKinds.emerald === 1 && gres.save.gemKinds.ruby === 1 && gres.rGem === '5' && !gres.hidden && /🟢/.test(gres.rGems), `けっかに宝石が出て、保存にたまる (${gres.save.gems} 点 / ${gres.rGems.trim()})`);
+    // きたえる: 宝石が足りないと買えず、足りると上がる
+    await page.evaluate(() => window.__app.openShop('result'));
+    await page.locator('#tabTrain').tap();
+    await sleep(100);
+    const tr0 = await page.evaluate(() => ({ cards: document.querySelectorAll('.gcard.train').length, btns: [...document.querySelectorAll('.gcard.train .gbtn')].map((b) => b.textContent.trim()), cant: document.querySelectorAll('.gcard.train .gbtn.cant').length }));
+    ok(tr0.cards === 3 && tr0.btns[0] === '💎 6', `「きたえる」に 3 つ並ぶ (${tr0.btns.join(' / ')})`);
+    await page.locator('.gcard.train[data-up="jump"] .gbtn').tap();
+    await sleep(100);
+    const tr1 = await page.evaluate(() => ({ save: window.__app.save(), pips: document.querySelectorAll('.gcard.train[data-up="jump"] .pips i.on').length }));
+    ok(tr1.save.up.jump === 0 && tr1.save.gems === 5, `宝石が足りないと、きたえられない (${tr1.save.gems} 点・Lv ${tr1.save.up.jump})`);
+    await page.evaluate(() => { const s = window.__app.save(); s.gems = 40; });
+    await page.evaluate(() => window.__app.openShop('result'));
+    await page.locator('#tabTrain').tap();
+    await sleep(100);
+    await page.locator('.gcard.train[data-up="jump"] .gbtn').tap();
+    await sleep(100);
+    const tr2 = await page.evaluate(() => ({ save: window.__app.save(), pips: document.querySelectorAll('.gcard.train[data-up="jump"] .pips i.on').length, btn: document.querySelector('.gcard.train[data-up="jump"] .gbtn').textContent.trim(), stored: JSON.parse(localStorage.getItem('spy-mint-v1')) }));
+    ok(tr2.save.up.jump === 1 && tr2.save.gems === 34 && tr2.pips === 1 && tr2.btn === '💎 10' && tr2.stored.up.jump === 1, `宝石 6 点でジャンプが Lv.1 に。つぎは 10 点 (${tr2.save.gems} 点・${tr2.btn}・保存 ${tr2.stored.up.jump})`);
+    // 買ったぶんが、次のあそびに効く
+    await page.evaluate(() => window.__app.start({ seed: 21, noEnemies: true }));
+    await sleep(200);
+    const up = await page.evaluate(() => { const g = window.__app.game(); return { jk: g.jumpK, up: g.up }; });
+    ok(up.up.jump === 1 && Math.abs(up.jk - 1.04) < 1e-9, `次のあそびでジャンプが高い (${up.jk})`);
+    await ctx.close();
+
+    // 前の版の保存 (宝石の欄が無い) を開いても、壊れない
+    ({ ctx, page } = await freshPage(browser));
+    page.on('pageerror', (e) => errors.push('引きつぎ: ' + e.message));
+    await page.evaluate(() => localStorage.setItem('spy-mint-v1', JSON.stringify({ coins: 77, owned: ['mizu', 'twin'], equipped: 'twin', best: 12, mute: false, tips: {} })));
+    await page.reload();
+    await page.waitForFunction(() => window.__app);
+    const old = await page.evaluate(() => window.__app.save());
+    ok(old.coins === 77 && old.gems === 0 && old.up.jump === 0 && old.owned.length === 2 && JSON.stringify(old.gemKinds) === '{}', `前の版の保存でも、宝石は 0 から始まる (${JSON.stringify(old.up)})`);
     await ctx.close();
 
     // ------------------------------------------------------------ いちじていし

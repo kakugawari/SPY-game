@@ -79,6 +79,13 @@ button { font: inherit; color: inherit; touch-action: manipulation; }
 .hud-coin { margin-top: 4px; display: flex; align-items: center; gap: 6px; font-weight: 900; font-size: 18px; }
 .hud-coin b { -webkit-text-stroke: 4px var(--ink); paint-order: stroke fill; font-variant-numeric: tabular-nums; }
 
+.hud-gem { display: inline-flex; align-items: center; gap: 4px; margin-left: 10px; }
+.hud-gem b { -webkit-text-stroke: 4px var(--ink); paint-order: stroke fill; font-variant-numeric: tabular-nums; }
+.gem-dot {
+  display: inline-block; width: 15px; height: 17px; flex: none;
+  background: linear-gradient(135deg, #fff 0 14%, #ff6b8a 15% 55%, #c2154a 56%);
+  clip-path: polygon(50% 100%, 0 35%, 22% 0, 78% 0, 100% 35%); filter: drop-shadow(0 1px 0 rgba(42,33,96,.7));
+}
 .hud-stage { margin-top: 6px; width: 118px; font-weight: 900; font-size: 13px; letter-spacing: .04em; }
 .hud-stage span { display: block; -webkit-text-stroke: 4px var(--ink); paint-order: stroke fill; }
 .hud-stage i { display: block; margin-top: 3px; height: 8px; border-radius: 99px; background: rgba(42,33,96,.72); border: 2px solid rgba(255,255,255,.55); overflow: hidden; }
@@ -184,7 +191,7 @@ button { font: inherit; color: inherit; touch-action: manipulation; }
 
 .title-meta { display: flex; gap: 8px; align-items: center; justify-content: center; margin-top: 2px; }
 .meta-chip {
-  display: inline-flex; align-items: center; gap: 6px; padding: 5px 12px; border-radius: 999px; font-weight: 800; font-size: 14px;
+  display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; font-weight: 800; font-size: 14px;
   background: rgba(42,33,96,.62); border: 2px solid rgba(255,255,255,.55); font-variant-numeric: tabular-nums;
 }
 .btn-chip { cursor: pointer; }
@@ -198,6 +205,20 @@ button { font: inherit; color: inherit; touch-action: manipulation; }
   width: 44px; height: 44px; border-radius: 50%; border: 3px solid #fff; background: linear-gradient(#a9a6d8, #7c78b8);
   font-size: 30px; font-weight: 900; line-height: 1; padding: 0 0 4px; display: grid; place-items: center; cursor: pointer;
 }
+.shop-tabs { flex: none; display: flex; gap: 8px; padding: 2px 14px 4px; }
+.shop-tab {
+  flex: 1; height: 44px; border-radius: 14px; border: 3px solid rgba(255,255,255,.55); background: rgba(42,33,96,.55);
+  color: #e0d6ff; font-weight: 900; font-size: 16px; cursor: pointer;
+}
+.shop-tab.on { background: linear-gradient(#ff8fb2, #ff4f86); border-color: #fff; color: #fff; box-shadow: 0 3px 0 rgba(42,33,96,.45); }
+.gembook { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; padding: 8px; border-radius: 18px; background: rgba(42,33,96,.55); border: 3px solid rgba(255,255,255,.4); }
+.gembook > div { text-align: center; font-size: 11px; font-weight: 800; color: #e0d6ff; line-height: 1.3; }
+.gembook b { display: block; font-size: 17px; color: #fff; font-variant-numeric: tabular-nums; }
+.gembook .gi { display: block; font-size: 22px; line-height: 1.2; }
+.gembook .lock { opacity: .45; }
+.pips { grid-column: 1 / 4; display: flex; gap: 3px; margin-top: 2px; }
+.pips i { flex: 1; height: 9px; border-radius: 4px; background: #e5defa; }
+.pips i.on { background: linear-gradient(#ffe27a, #ffb703); }
 .shop-note { flex: none; margin: 4px 16px 8px; font-size: 12px; line-height: 1.6; font-weight: 700; color: #f1e9ff; }
 .shop-note b { color: var(--yellow); }
 .shop-list {
@@ -240,7 +261,8 @@ button { font: inherit; color: inherit; touch-action: manipulation; }
 .r-best { margin: -6px 0 14px; font-size: 13px; font-weight: 800; color: #e0d6ff; }
 .r-best b { font-size: 16px; color: #fff; font-variant-numeric: tabular-nums; }
 .r-new { margin: 0 0 6px; font-weight: 900; font-size: 18px; color: var(--yellow); }
-.r-rows { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 10px 0 16px; }
+.r-gems { margin: -8px 0 14px; font-size: 14px; font-weight: 800; color: #fff2a8; letter-spacing: .08em; }
+.r-rows { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 10px 0 16px; }
 .r-rows div { background: rgba(42,33,96,.55); border-radius: 14px; padding: 8px 4px; }
 .r-rows span { display: block; font-size: 11px; font-weight: 800; color: #e0d6ff; }
 .r-rows b { font-size: 22px; font-variant-numeric: tabular-nums; }

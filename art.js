@@ -360,54 +360,7 @@
     void t;
   }
 
-  // ------------------------------------------------------------ じゃま物・もの・アイテム
-  function drawObstacle(c, ob, base) {
-    const O = C.OBSTACLES[ob.t];
-    const x = ob.x, y = base;
-    if (ob.t === 'cone') {
-      c.fillStyle = '#ff8a3c';
-      c.beginPath(); c.moveTo(x - 8, y); c.lineTo(x - 3, y - O.h); c.lineTo(x + 3, y - O.h); c.lineTo(x + 8, y); c.closePath(); c.fill();
-      c.fillStyle = '#fff'; c.fillRect(x - 5.5, y - 13, 11, 4);
-      c.fillStyle = '#e06a1f'; c.fillRect(x - 11, y - 3, 22, 3);
-    } else if (ob.t === 'box') {
-      c.fillStyle = '#c9a074'; rr(c, x - 14, y - O.h, 28, O.h, 3); c.fill();
-      c.fillStyle = '#b78a5c'; c.fillRect(x - 14, y - O.h, 28, 5);
-      c.fillStyle = 'rgba(255,255,255,.55)'; c.fillRect(x - 3, y - O.h, 6, O.h);
-      c.fillStyle = '#7a5a3a'; c.font = '700 8px sans-serif'; c.textAlign = 'center'; c.fillText('▼', x + 8, y - 8);
-    } else if (ob.t === 'car') {
-      const col = ['#ff6b6b', '#4cc9f0', '#ffd166', '#7bd88f', '#c77dff'][Math.floor(hash(Math.round(x), 41) * 5)];
-      c.fillStyle = 'rgba(0,0,0,.18)'; c.beginPath(); c.ellipse(x, y, 34, 3.4, 0, 0, TAU); c.fill();
-      c.fillStyle = col; rr(c, x - 32, y - 20, 64, 17, 6); c.fill();                  // 車体
-      c.beginPath(); c.moveTo(x - 20, y - 20); c.lineTo(x - 13, y - 33); c.lineTo(x + 12, y - 33); c.lineTo(x + 21, y - 20); c.closePath(); c.fill();   // 屋根
-      c.fillStyle = 'rgba(255,255,255,.28)'; rr(c, x - 31, y - 19, 62, 5, 3); c.fill();
-      c.fillStyle = '#dff4ff';
-      c.beginPath(); c.moveTo(x - 16, y - 21); c.lineTo(x - 11, y - 30); c.lineTo(x - 1, y - 30); c.lineTo(x - 1, y - 21); c.closePath(); c.fill();
-      c.beginPath(); c.moveTo(x + 2, y - 21); c.lineTo(x + 2, y - 30); c.lineTo(x + 11, y - 30); c.lineTo(x + 17, y - 21); c.closePath(); c.fill();
-      circle(c, x + 29, y - 12, 2.6, '#fff3a8'); circle(c, x - 29, y - 12, 2.2, '#ff8a8a');
-      circle(c, x - 18, y - 4, 6, '#2b2a3a'); circle(c, x + 18, y - 4, 6, '#2b2a3a');
-      circle(c, x - 18, y - 4, 2.4, '#b9b9c9'); circle(c, x + 18, y - 4, 2.4, '#b9b9c9');
-    } else if (ob.t === 'bin') {
-      c.fillStyle = '#6fae8c'; rr(c, x - 9, y - 26, 18, 26, 3); c.fill();
-      c.fillStyle = '#4e8a6b'; rr(c, x - 11, y - 29, 22, 5, 2); c.fill();
-      c.fillStyle = 'rgba(255,255,255,.3)'; c.fillRect(x - 6, y - 22, 3, 18);
-      c.fillStyle = '#4e8a6b'; c.fillRect(x - 9, y - 12, 18, 2);
-    } else if (ob.t === 'hydrant') {
-      c.fillStyle = '#ff5d5d'; rr(c, x - 6, y - 21, 12, 21, 3); c.fill();
-      circle(c, x, y - 22, 6.5, '#ff5d5d');
-      c.fillStyle = '#d63c3c'; c.fillRect(x - 10, y - 14, 20, 5); rr(c, x - 8, y - 4, 16, 4, 1); c.fill();
-      circle(c, x, y - 28, 2.2, '#ffe27a');
-    } else if (ob.t === 'bench') {
-      c.fillStyle = '#b07a52'; rr(c, x - 19, y - 19, 38, 6, 2); c.fill();
-      c.fillStyle = '#c99166'; rr(c, x - 19, y - 12, 38, 5, 2); c.fill();
-      c.fillStyle = '#5b5876'; c.fillRect(x - 17, y - 8, 3, 8); c.fillRect(x + 14, y - 8, 3, 8);
-    } else {
-      c.fillStyle = '#9aa3bd'; rr(c, x - 17, y - O.h, 34, O.h, 4); c.fill();
-      c.fillStyle = '#7c86a3';
-      for (let i = 0; i < 4; i++) c.fillRect(x - 14 + i * 8, y - O.h + 4, 4, O.h - 8);
-      c.fillStyle = 'rgba(255,255,255,.35)'; c.fillRect(x - 17, y - O.h, 34, 3);
-    }
-  }
-
+  // ------------------------------------------------------------ もの・アイテム
   function drawProp(c, kind, x, y, rot, scale) {
     // (x, y) は物の底の中心
     c.save();
@@ -465,6 +418,32 @@
     c.restore();
   }
 
+  const GEM_COL = { ruby: ['#ff3b5c', '#ff9aae', '#b3123a'], sapphire: ['#3b82ff', '#a5c8ff', '#1a45b8'], emerald: ['#2fd27a', '#a6f2c9', '#128a4c'], diamond: ['#bfeaff', '#ffffff', '#7ab6e6'] };
+  /** 宝石。ひし形にカットして、面ごとに明るさを変える。ときどききらっと光る */
+  function drawGem(c, kind, x, y, t) {
+    const col = GEM_COL[kind] || GEM_COL.ruby;
+    const big = kind === 'diamond' ? 1.25 : kind === 'emerald' ? 1.1 : 1;
+    const gr = c.createRadialGradient(x, y, 2, x, y, 26);
+    gr.addColorStop(0, col[1].replace('#', '#') + '99'); gr.addColorStop(1, col[0] + '00');
+    c.fillStyle = gr; c.fillRect(x - 26, y - 26, 52, 52);
+    c.save(); c.translate(x, y); c.scale(big, big);
+    c.fillStyle = col[0];                                   // 本体
+    c.beginPath(); c.moveTo(-10, -3); c.lineTo(-5, -9); c.lineTo(5, -9); c.lineTo(10, -3); c.lineTo(0, 11); c.closePath(); c.fill();
+    c.fillStyle = col[1];                                   // 上の面 (明るい)
+    c.beginPath(); c.moveTo(-10, -3); c.lineTo(-5, -9); c.lineTo(5, -9); c.lineTo(10, -3); c.lineTo(0, -3); c.closePath(); c.fill();
+    c.fillStyle = col[2];                                   // 右下の面 (暗い)
+    c.beginPath(); c.moveTo(0, -3); c.lineTo(10, -3); c.lineTo(0, 11); c.closePath(); c.fill();
+    c.strokeStyle = 'rgba(255,255,255,.85)'; c.lineWidth = 1;
+    c.beginPath(); c.moveTo(-10, -3); c.lineTo(-5, -9); c.lineTo(5, -9); c.lineTo(10, -3); c.lineTo(0, 11); c.closePath(); c.stroke();
+    const k = (t * 1.6 + x * 0.013) % 1;                     // きらっ
+    if (k < 0.25) {
+      const u = Math.sin(k / 0.25 * Math.PI);
+      c.strokeStyle = 'rgba(255,255,255,' + (0.9 * u).toFixed(2) + ')'; c.lineWidth = 1.6;
+      c.beginPath(); c.moveTo(-5, -12 - 6 * u); c.lineTo(-5, -12 + 6 * u); c.moveTo(-5 - 6 * u, -12); c.lineTo(-5 + 6 * u, -12); c.stroke();
+    }
+    c.restore();
+  }
+
   function drawItem(c, it, t) {
     const bob = Math.sin(t * 4 + it.x * 0.05) * 2.5;
     const x = it.x, y = it.y + bob;
@@ -484,6 +463,8 @@
       c.fillStyle = 'rgba(255,255,255,.7)'; c.beginPath(); c.ellipse(x - 3.5, y + 1, 2.2, 4.5, 0.3, 0, TAU); c.fill();
     } else if (it.t === 'bomb') {
       drawBomb(c, x, y + 1, 0, t);
+    } else if (it.t === 'gem') {
+      drawGem(c, it.k, x, y, t);
     } else if (it.t === 'board' || it.t === 'toycar') {
       const gr = c.createRadialGradient(x, y, 2, x, y, 26);
       gr.addColorStop(0, 'rgba(255,240,140,.55)'); gr.addColorStop(1, 'rgba(255,240,140,0)');
@@ -1039,6 +1020,12 @@
       case 'land':
         for (let i = 0; i < (ev.t === 'land' ? 5 : 3); i++) addFx({ k: 'puff', x: ev.x + (Math.random() - 0.5) * 12, y: ev.y - 2, vx: (Math.random() - 0.6) * 60, vy: -Math.random() * 20, r: 3 + Math.random() * 3, life: 0.35, max: 0.35 });
         break;
+      case 'gem': {
+        const col = (GEM_COL[ev.k] || GEM_COL.ruby);
+        for (let i = 0; i < 10; i++) addFx({ k: 'spark', x: ev.x, y: ev.y, vx: (Math.random() - 0.5) * 260, vy: (Math.random() - 0.8) * 260, life: 0.6, max: 0.6, col: i % 2 ? col[1] : col[0] });
+        addFx({ k: 'text', x: ev.x, y: ev.y - 26, vy: -50, txt: '💎 +' + ev.n, col: col[1], life: 0.9, size: ev.n >= 4 ? 18 : 14 });
+        break;
+      }
       case 'jump2':
         addFx({ k: 'ring', x: ev.x, y: ev.y - 2, r: 5, max: 30, life: 0.3, col: 'rgba(255,255,255,.9)' });
         for (let i = 0; i < 6; i++) addFx({ k: 'puff', x: ev.x + (Math.random() - 0.5) * 22, y: ev.y - 2, vx: (Math.random() - 0.5) * 90, vy: Math.random() * 20, r: 3 + Math.random() * 3, life: 0.35, max: 0.35 });
@@ -1073,8 +1060,7 @@
         addFx({ k: 'puff', x: ev.x - 20, y: ev.y - 3, vx: -60 - Math.random() * 40, vy: -Math.random() * 20, r: 2.5 + Math.random() * 2.5, life: 0.3, max: 0.3 });
         break;
       case 'smash': {
-        const cols = { cone: '#ff8a3d', box: '#c9a066', bin: '#8fa3b5', hydrant: '#ff5d5d', bench: '#b07a4a', car: '#7ec8ff', vent: '#aab' };
-        for (let i = 0; i < 9; i++) addFx({ k: 'spark', x: ev.x, y: ev.y - 14, vx: (Math.random() - 0.2) * 340, vy: -80 - Math.random() * 260, life: 0.6, max: 0.6, col: cols[ev.k] || '#fff' });
+        for (let i = 0; i < 9; i++) addFx({ k: 'spark', x: ev.x, y: ev.y - 14, vx: (Math.random() - 0.2) * 340, vy: -80 - Math.random() * 260, life: 0.6, max: 0.6, col: i % 2 ? '#fff2a8' : '#ffffff' });
         addFx({ k: 'text', x: ev.x, y: ev.y - 40, vy: -50, txt: 'ドカーン!', col: '#fff', life: 0.6, size: 15 });
         break;
       }
@@ -1200,13 +1186,11 @@
     }
     for (const b of vis) drawBuilding(c, g, b, view, t);
 
-    // もの・じゃま物・アイテム
+    // もの・アイテム
     for (const b of vis) {
-      for (const ob of b.roof.obs) drawObstacle(c, ob, b.roofY);
       for (const pr of b.roof.props) drawProp(c, pr.t, pr.x, b.roofY, 0);
       for (const it of b.roof.items) drawItem(c, it, t);
       if (g.p.inside === b.i) {
-        for (const ob of b.room.obs) drawObstacle(c, ob, b.floorY);
         for (const pr of b.room.props) drawProp(c, pr.t, pr.x, b.floorY, 0);
         for (const it of b.room.items) drawItem(c, it, t);
       }

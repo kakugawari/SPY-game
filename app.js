@@ -18,7 +18,7 @@
   const SAVE_KEY = 'spy-mint-v1';
 
   function defaultSave() {
-    return { coins: 120, owned: ['mizu'], equipped: 'mizu', best: 0, mute: false, tips: {} };
+    return { coins: 120, owned: ['mizu'], equipped: 'mizu', best: 0, mute: false, tips: {}, gems: 0, gemKinds: {}, up: { jump: 0, power: 0, tank: 0 } };
   }
 
   function loadSave() {
@@ -33,6 +33,9 @@
         if (typeof s.best === 'number') d.best = s.best;
         d.mute = !!s.mute;
         if (s.tips && typeof s.tips === 'object') d.tips = s.tips;
+        if (typeof s.gems === 'number' && s.gems >= 0) d.gems = Math.floor(s.gems);
+        if (s.gemKinds && typeof s.gemKinds === 'object') for (const k in C.GEMS) if (s.gemKinds[k] > 0) d.gemKinds[k] = Math.floor(s.gemKinds[k]);
+        if (s.up && typeof s.up === 'object') for (const k in C.UPGRADES) d.up[k] = Math.max(0, Math.min(C.UPGRADES[k].max, Math.floor(s.up[k]) || 0));
       }
     } catch (e) { /* 保存できない環境でも遊べる */ }
     if (d.owned.indexOf('mizu') < 0) d.owned.unshift('mizu');
@@ -114,6 +117,7 @@
     function play(name) {
       switch (name) {
         case 'jump': tone(300, 640, 0.14, 'square', 0.07); break;
+        case 'gem': [1318, 1760, 2093].forEach((f, i) => tone(f, f, 0.12, 'triangle', 0.13, i * 0.05)); break;
         case 'jump2': tone(520, 1000, 0.12, 'square', 0.07); tone(800, 1500, 0.1, 'triangle', 0.08, 0.05); break;
         case 'hit': if (throttle('hit', 60)) { tone(520, 260, 0.08, 'triangle', 0.14); } break;
         case 'splash': noise(0.25, 0.4, 900, 0.7); break;
@@ -147,6 +151,7 @@
       switch (ev.t) {
         case 'jump': play('jump'); break;
         case 'jump2': play('jump2'); break;
+        case 'gem': if (throttle('gem', 50)) play('gem'); break;
         case 'shoot': gunSound(ev.gun, { ramp: ev.ramp }); break;
         case 'charge': extraSound('charge'); break;
         case 'arc': extraSound('arc'); break;
@@ -180,7 +185,7 @@
 
   // ------------------------------------------------------------ 状態
   const els = {
-    stage: $('stage'), cv: $('cv'), hud: $('hud'), pad: $('pad'),
+    stage: $('stage'), hGems: $('hGems'), cv: $('cv'), hud: $('hud'), pad: $('pad'),
     hDist: $('hDist'), hCoins: $('hCoins'), hGunIcon: $('hGunIcon'), hGunName: $('hGunName'), hWater: $('hWater'),
     warn: $('warn'), toast: $('toast'), sky2: $('sky2'),
     hStage: $('hStage'), hStageBar: $('hStageBar'), banner: $('stageBanner'), sbName: $('sbName'), sbSub: $('sbSub'),
@@ -227,6 +232,8 @@
     $('tCoins').textContent = String(save.coins);
     $('tBest').textContent = String(save.best);
     $('sCoins').textContent = String(save.coins);
+    $('tGems').textContent = String(save.gems);
+    $('sGems').textContent = String(save.gems);
     $('soundLabel').textContent = save.mute ? '🔇 おと' : '🔊 おと';
     $('pauseSoundLabel').textContent = save.mute ? 'おとなし' : 'おとあり';
   }
@@ -255,7 +262,7 @@
     }
   }
 
-  /** 谷・じゃま物の手前で跳ぶ自動プレイ (タイトルの背景用。core.test.js のものと同じ考え方)。 */
+  /** 谷の手前で跳ぶ自動プレイ (タイトルの背景用。core.test.js のものと同じ考え方)。 */
   function botStep(g, st, dt) {
     const p = g.p;
     if (st.air) {
@@ -279,7 +286,7 @@
     opts = opts || {};
     const owned = save.owned.slice().sort((a, b) => C.GUNS.indexOf(C.GUN_BY_ID[a]) - C.GUNS.indexOf(C.GUN_BY_ID[b]));
     app.animPlay = null;
-    app.g = C.newGame({ seed: opts.seed, guns: owned, startGun: save.equipped, bombs: 3, noEnemies: !!opts.noEnemies });
+    app.g = C.newGame({ seed: opts.seed, guns: owned, startGun: save.equipped, bombs: 3, noEnemies: !!opts.noEnemies, up: save.up });
     app.acc = 0;
     app.over = false; app.overT = 0;
     app.shake = 0;
@@ -299,12 +306,19 @@
     const isBest = m > save.best;
     if (isBest) save.best = m;
     save.coins += g.coins;
+    save.gems += g.gems;
+    for (const k in g.gemKinds) save.gemKinds[k] = (save.gemKinds[k] || 0) + g.gemKinds[k];
     persist();
     $('rTitle').textContent = g.over === 'fell' ? 'おっこちちゃった!' : 'つかまっちゃった!';
     $('rDist').textContent = String(m);
     $('rStage').textContent = String(g.stage);
     $('rCoins').textContent = '+' + g.coins;
     $('rKills').textContent = String(g.kills);
+    $('rGem').textContent = String(g.gems);
+    const gl = $('rGems');
+    const found = Object.keys(C.GEMS).filter((k) => g.gemKinds[k]).map((k) => C.GEMS[k].icon + '×' + g.gemKinds[k]);
+    gl.hidden = !found.length;
+    gl.textContent = found.join('  ');
     $('rBest').textContent = String(save.best);
     $('rNew').hidden = !isBest || m === 0;
     show('result');
@@ -332,7 +346,57 @@
     };
   }
 
+  /** 「きたえる」の札。おうちで宝石を使って、じぶんを強くする。 */
+  function upText(k, lv) {
+    const v = Math.round(C.UPGRADES[k].per * lv * 100);
+    return lv ? (k === 'tank' ? '-' : '+') + v + '%' : 'なし';
+  }
+
+  function renderTrain() {
+    const list = $('shopList');
+    const keep = list.scrollTop;
+    const frag = document.createDocumentFragment();
+    const book = document.createElement('div');
+    book.className = 'gembook';
+    book.innerHTML = Object.keys(C.GEMS).map((k) => {
+      const G = C.GEMS[k], n = save.gemKinds[k] || 0;
+      return '<div class="' + (n ? '' : 'lock') + '"><span class="gi">' + G.icon + '</span>' + (n ? G.name : '？？？') + '<b>' + n + '</b></div>';
+    }).join('');
+    frag.appendChild(book);
+    Object.keys(C.UPGRADES).forEach((k) => {
+      const U = C.UPGRADES[k], lv = save.up[k] || 0, max = lv >= U.max;
+      const cost = C.gemCost(lv);
+      const card = document.createElement('div');
+      card.className = 'gcard train';
+      card.dataset.up = k;
+      const btn = max ? '<button type="button" class="gbtn now" data-act="none">さいだい!</button>'
+        : '<button type="button" class="gbtn ' + (save.gems >= cost ? '' : 'cant') + '" data-act="train">💎 ' + cost + '</button>';
+      let pips = '';
+      for (let i = 0; i < U.max; i++) pips += '<i class="' + (i < lv ? 'on' : '') + '"></i>';
+      card.innerHTML =
+        '<div class="gicon" style="background:#ffd16633">' + U.icon + '</div>' +
+        '<div class="gname">' + U.name + ' <small>Lv.' + lv + '</small></div>' + btn +
+        '<div class="gdesc"><b class="gtrait">' + U.desc + '</b>' + 'いま ' + upText(k, lv) + (max ? '' : ' → ' + upText(k, lv + 1)) + '</div>' +
+        '<div class="pips">' + pips + '</div>';
+      frag.appendChild(card);
+    });
+    list.replaceChildren(frag);
+    list.scrollTop = keep;
+    refreshLabels();
+  }
+
+  function setShopTab(tab) {
+    app.shopTab = tab;
+    $('tabGuns').classList.toggle('on', tab === 'guns');
+    $('tabTrain').classList.toggle('on', tab === 'train');
+    $('shopNote').innerHTML = tab === 'guns'
+      ? 'コインで水でっぽうを買おう。<b>「つかう」</b>で、はじめに持つ1丁をえらべるよ。(あそんでいる間は ぜんぶ切りかえられる)'
+      : 'ビルの上や中で<b>宝石💎</b>を盗んで、じぶんを強くしよう。高い所の宝石は、<b>2だんジャンプ</b>で取れる!';
+    renderShop();
+  }
+
   function renderShop() {
+    if (app.shopTab === 'train') { renderTrain(); return; }
     const list = $('shopList');
     const keep = list.scrollTop;
     const frag = document.createDocumentFragment();
@@ -361,12 +425,13 @@
     });
     list.replaceChildren(frag);
     list.scrollTop = keep;
-    $('sCoins').textContent = String(save.coins);
+    refreshLabels();
   }
 
   function openShop(from) {
     app.fromShop = from;
-    renderShop();
+    app.shopTab = 'guns';
+    setShopTab('guns');
     show('shop');
     $('shopList').scrollTop = 0;
   }
@@ -375,6 +440,18 @@
     const btn = e.target.closest('.gbtn');
     if (!btn) return;
     const card = btn.closest('.gcard');
+    if (card.dataset.up) {
+      const k = card.dataset.up, lv = save.up[k] || 0, cost = C.gemCost(lv);
+      if (btn.dataset.act === 'train' && lv < C.UPGRADES[k].max && save.gems >= cost) {
+        save.gems -= cost; save.up[k] = lv + 1;
+        persist();
+        Snd.play('buy');
+      } else if (btn.dataset.act === 'train') {
+        Snd.play('dry');
+      }
+      renderShop();
+      return;
+    }
     const gun = C.GUN_BY_ID[card.dataset.gun];
     const act = btn.dataset.act;
     if (act === 'buy') {
@@ -475,6 +552,7 @@
     const m = C.metersOf(g.p.x);
     setText(els.hDist, 'dist', String(m));
     setText(els.hCoins, 'coins', String(g.coins));
+    setText(els.hGems, 'gems', String(g.gems));
     setText(els.hStage, 'stage', 'ステージ ' + g.stage);
     const prog = ((m % C.STAGE_LEN_M) / C.STAGE_LEN_M).toFixed(3);
     if (app.cache.prog !== prog) { app.cache.prog = prog; els.hStageBar.style.transform = 'scaleX(' + prog + ')'; }
@@ -531,7 +609,7 @@
 
   function showStageBanner(n, bonus, ground) {
     els.sbName.textContent = 'ステージ ' + n;
-    els.sbSub.textContent = ground ? 'ちじょうの おいかけっこ! 車は長おしでジャンプ' : 'ステージクリア! +' + bonus + 'コイン ・ 水まんたん';
+    els.sbSub.textContent = ground ? 'ちじょうの おいかけっこ! 乗り物と宝石をさがそう' : 'ステージクリア! +' + bonus + 'コイン ・ 水まんたん';
     els.banner.animate([
       { opacity: 0, transform: 'translateX(-50%) scale(.6)' },
       { opacity: 1, transform: 'translateX(-50%) scale(1.08)', offset: 0.18 },
@@ -646,11 +724,12 @@
         case 'dry': toast('水ぎれ! タンク💧をひろおう', 1400); break;
         case 'nope': if (g.bombs <= 0) toast('水ばくだんが ないよ', 1200); break;
         case 'jump': app.jumpN = (app.jumpN || 0) + 1; if (app.jumpN === 5) tip('djump', '空中でもういちどジャンプできるよ(2だんジャンプ)'); break;
+        case 'gem': tip('gem', '💎宝石は「ぶきや → きたえる」で、じぶんを強くできるよ'); break;
         case 'trip': app.shake = Math.max(app.shake, 0.15); break;
-        case 'ride': toast(C.RIDES[ev.k].icon + ' ' + C.RIDES[ev.k].name + '! はやいよ' + (C.RIDES[ev.k].smash ? '\nじゃま物は ぜんぶ はね飛ばす!' : '\nぶつかると おりちゃう'), 1800); break;
+        case 'ride': toast(C.RIDES[ev.k].icon + ' ' + C.RIDES[ev.k].name + '! はやいよ' + (C.RIDES[ev.k].shield ? '\n敵にぶつかられても はね飛ばす!' : '\nとっても はやいよ'), 1800); break;
         case 'unride': if (ev.why === 'time') toast('おりた', 900); break;
         case 'smash': app.shake = Math.max(app.shake, 0.2); break;
-        case 'stage': showStageBanner(ev.n, ev.bonus, ev.ground); applySky(ev.n, false); if (ev.ground) tip('ground', 'ちじょうは谷が無いよ。車は長おしの高いジャンプ!\n🛹スケボーや🚙ラジコンカーに乗れるよ'); break;
+        case 'stage': showStageBanner(ev.n, ev.bonus, ev.ground); applySky(ev.n, false); if (ev.ground) tip('ground', 'ちじょうは谷が無いよ。🛹スケボーや🚙ラジコンカーに乗れるよ'); break;
         default: break;
       }
     }
@@ -773,6 +852,8 @@
     $('btnShop').addEventListener('click', () => { Snd.play('ui'); openShop('title'); });
     $('btnShopBack').addEventListener('click', () => { Snd.play('ui'); show(app.fromShop === 'result' ? 'result' : 'title'); });
     $('shopList').addEventListener('click', onShopClick);
+    $('tabGuns').addEventListener('click', () => { Snd.play('ui'); setShopTab('guns'); });
+    $('tabTrain').addEventListener('click', () => { Snd.play('ui'); setShopTab('train'); });
     $('btnAgain').addEventListener('click', () => { Snd.play('ui'); startGame(); });
     $('btnResultShop').addEventListener('click', () => { Snd.play('ui'); openShop('result'); });
     $('btnResultTitle').addEventListener('click', () => { Snd.play('ui'); show('title'); });

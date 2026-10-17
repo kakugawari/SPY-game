@@ -69,7 +69,7 @@ test('谷の幅は、どの高さの差でも跳んで渡れる余裕がある (
   assert.ok(n > 1000, `調べた谷の数 ${n}`);
 });
 
-test('自動プレイが 20 通りの世界を 2 分走りきれる (谷・壁・じゃま物をぜんぶ越える)', () => {
+test('自動プレイが 20 通りの世界を 2 分走りきれる (谷と壁をぜんぶ越える)', () => {
   let worst = Infinity;
   for (let seed = 1; seed <= 20; seed++) {
     const g = runBot(seed, 120);
@@ -98,22 +98,6 @@ test('高いビルのふちの少し下にぶつかっても、角に手がか�
   assert.ok(lo.blocked && lo.x <= b.x - 9 + 0.01, '30px より下なら、ふつうに壁にぶつかる');
 });
 
-test('じゃま物は互いに 170px 以上はなれ、谷のきわには置かれない', () => {
-  for (let seed = 1; seed <= 30; seed++) {
-    const w = Core.createWorld(seed);
-    Core.ensure(w, 30000);
-    for (const b of w.b) {
-      if (b.ground) continue;            // 地上の道は、下の別のテストで見る
-      for (const L of [b.roof, b.room]) {
-        const xs = L.obs.map((o) => o.x).sort((a, c) => a - c);
-        for (let i = 1; i < xs.length; i++) assert.ok(xs[i] - xs[i - 1] >= 170, '近すぎ');
-        for (const o of L.obs) assert.ok(o.x >= b.x + 95 || b.i === 0, '左はしに近い');
-      }
-      for (const o of b.roof.obs) assert.ok(o.x <= b.x + b.w - 150 || b.i === 0, '右はしに近い');
-    }
-  }
-});
-
 test('ドアのあるビルは中が走れる広さ。出口は屋上の右はしの手前', () => {
   let doors = 0;
   for (let seed = 1; seed <= 30; seed++) {
@@ -124,7 +108,6 @@ test('ドアのあるビルは中が走れる広さ。出口は屋上の右は�
       doors++;
       assert.ok(b.exitX - b.doorX >= 200, `中が短い ${b.exitX - b.doorX}`);
       assert.ok(b.x + b.w - b.exitX >= 100, '出口から谷までが近すぎる');
-      for (const o of b.room.obs) assert.ok(o.x > b.doorX + 100 && o.x < b.exitX - 80, '中のじゃま物の位置');
     }
   }
   assert.ok(doors > 100, `ドアの数 ${doors}`);
@@ -400,25 +383,6 @@ test('コイン・タンク・爆弾・ギフトが拾える', () => {
   assert.strictEqual(g.gunIdx, 1);
 });
 
-test('じゃま物にぶつかるとつまずく。跳べば越える', () => {
-  const g = Core.newGame({ seed: 7, noEnemies: true });
-  const ob = g.world.b[0].roof.obs[0];
-  g.p.x = ob.x - 40;
-  let tripped = false;
-  for (let i = 0; i < 60; i++) { Core.step(g, DT); if (g.events.some((e) => e.t === 'trip')) tripped = true; }
-  assert.ok(tripped, '跳ばなければつまずく');
-  const h = Core.newGame({ seed: 7, noEnemies: true });
-  h.p.x = ob.x - 60;
-  let trippedH = false;
-  const st = makeBot();
-  for (let i = 0; i < 60; i++) {
-    botStep(h, st, DT);
-    Core.step(h, DT);
-    if (h.events.some((e) => e.t === 'trip')) trippedH = true;
-  }
-  assert.ok(!trippedH, '跳べば越える');
-});
-
 test('敵の種類がそろっていて、距離が進むと出てくる', () => {
   for (const k of ['suit', 'dog', 'big', 'drone']) assert.ok(Core.ENEMIES[k]);
   const seen = new Set();
@@ -538,30 +502,7 @@ test('地上ステージ: 4 ステージに 1 回 (2, 6, 10 ...)。そのステ�
   assert.ok(streets > 60, `道の区画の数 ${streets}`);
 });
 
-test('地上のじゃま物: 190px 以上はなれる (区画の継ぎ目をまたいでも)。入り口から 95px・出口から 150px あける。車がある', () => {
-  const kinds = new Set();
-  for (let seed = 1; seed <= 40; seed++) {
-    const w = Core.createWorld(seed);
-    Core.ensure(w, Core.STAGE_PX * 12);
-    let last = null;
-    for (const b of w.b) {
-      if (!b.ground) { last = null; continue; }
-      const entering = !(w.b[b.i - 1] && w.b[b.i - 1].ground && w.b[b.i - 1].x + w.b[b.i - 1].w === b.x);
-      const lastSeg = b.x + b.w >= Core.stageOf(b.x) * Core.STAGE_PX - 1;
-      for (const o of b.roof.obs) {
-        kinds.add(o.t);
-        if (last != null) assert.ok(o.x - last >= 190, `seed ${seed}: ${o.x - last}px しかはなれていない`);
-        if (entering && last == null) assert.ok(o.x >= b.x + 95, '入り口に近すぎる');
-        if (lastSeg) assert.ok(o.x <= b.x + b.w - 150, '出口に近すぎる');
-        last = o.x;
-      }
-    }
-  }
-  for (const k of ['car', 'bin', 'hydrant', 'bench', 'cone', 'box']) assert.ok(kinds.has(k), `${k} が出ない`);
-  assert.ok(!kinds.has('vent'), '地上に屋上のダクトは出ない');
-});
-
-test('自動プレイが、地上ステージ (車は押しつづけて跳ぶ) をふくむ 3 ステージを 40 通りで走りきる', () => {
+test('自動プレイが、地上ステージをふくむ 3 ステージを 40 通りで走りきる', () => {
   for (let seed = 1; seed <= 40; seed++) {
     const g = Core.newGame({ seed: seed, noEnemies: true });
     const st = makeBot(seed % 3 === 0 ? 0.06 : 0);
@@ -574,32 +515,6 @@ test('自動プレイが、地上ステージ (車は押しつづけて跳ぶ) �
     assert.strictEqual(g.over, null, `seed ${seed}: ${g.over} (x=${Math.round(g.p.x)})`);
     assert.ok(g.stage >= 4 && sawStreet, `seed ${seed}: stage ${g.stage}`);
   }
-});
-
-test('車は、ちょん跳びではつまずき、押しつづけたジャンプで越える', () => {
-  const mk = () => {
-    const g = Core.newGame({ seed: 7, noEnemies: true });
-    const b = g.world.b[0];
-    b.roof.obs.length = 0; b.roof.obs.push({ x: 400, t: 'car' });
-    g.p.x = 300; g.p.y = b.roofY;
-    return g;
-  };
-  // ちょん跳び (押してすぐ離す) を、車の手前でいちばん合う位置に
-  let tripped = 0, passed = 0;
-  for (const d of [30, 40, 50, 60, 70]) {
-    const g = mk(); g.p.x = 400 - d;
-    Core.input(g, 'jump', true); Core.step(g, DT); Core.input(g, 'jump', false);
-    let t = false;
-    for (let i = 0; i < 90; i++) { Core.step(g, DT); if (g.events.some((e) => e.t === 'trip')) t = true; g.events.length = 0; }
-    if (t) tripped++;
-  }
-  assert.ok(tripped >= 4, `ちょん跳びでつまずいた ${tripped}/5`);
-  const g = mk(); const st = makeBot();
-  let t2 = false;
-  for (let i = 0; i < 120; i++) { botStep(g, st, DT); Core.step(g, DT); if (g.events.some((e) => e.t === 'trip')) t2 = true; g.events.length = 0; }
-  assert.ok(!t2 && g.p.x > 520, `押しつづければ越える (x=${Math.round(g.p.x)})`);
-  passed++;
-  assert.ok(passed);
 });
 
 test('stage イベントは地上かどうかを知らせる / 地上ステージは敵が 1 人多い', () => {
@@ -633,8 +548,6 @@ test('乗り物は地上の道にだけ出る (屋上には出ない)。両方�
       for (const it of b.roof.items.concat(b.room.items)) {
         if (!Core.RIDES[it.t]) continue;
         if (b.ground) { onStreet++; kinds.add(it.t); } else onRoof++;
-        const obs = b.roof.obs.some((o) => Math.abs(o.x - it.x) < 60);
-        assert.ok(!obs, `seed ${seed}: 乗り物がじゃま物と重なる`);
       }
     }
   }
@@ -649,7 +562,7 @@ function giveRide(g, kind) {
 test('乗ると速くなり、拾うと乗る。時間が切れると降りる', () => {
   const { g, b } = streetGame(3);
   g.p.x = b.x + 20; g.p.y = b.roofY; g.p.inside = -1;
-  b.roof.obs.length = 0; b.roof.items.length = 0;
+  for (const q of g.world.b) q.roof.items.length = 0;
   b.roof.items.push({ x: b.x + 30, y: b.roofY - 22, t: 'toycar' });
   let got = false;
   for (let i = 0; i < 30; i++) { Core.step(g, DT); if (g.events.some((e) => e.t === 'ride')) got = true; g.events.length = 0; }
@@ -660,20 +573,40 @@ test('乗ると速くなり、拾うと乗る。時間が切れると降りる',
   assert.ok(off && !g.p.ride, '降りた');
 });
 
-test('スケボーは、ぶつかると降りてつまずく。ラジコンカーは、車ごとはね飛ばして走りぬける', () => {
-  for (const [kind, smash] of [['board', false], ['toycar', true]]) {
-    const { g, b } = streetGame(5);
-    g.p.x = b.x + 40; g.p.y = b.roofY; g.p.inside = -1;
-    b.roof.items.length = 0; b.roof.obs.length = 0; b.roof.obs.push({ x: b.x + 140, t: 'car' });
-    giveRide(g, kind);
-    const seen = new Set();
-    for (let i = 0; i < 90; i++) { Core.step(g, DT); g.events.forEach((e) => seen.add(e.t)); g.events.length = 0; }
-    if (smash) {
-      assert.ok(seen.has('smash') && !seen.has('trip') && g.p.ride, `はね飛ばした ${[...seen]}`);
-      assert.strictEqual(b.roof.obs.length, 0, '車が消えた');
-    } else {
-      assert.ok(seen.has('trip') && seen.has('unride') && !g.p.ride, `つまずいて降りた ${[...seen]}`);
+test('障害物は無い (道に落ちている物は、ぜんぶ取れる物か、もてる物)。つまずくのは壁だけ', () => {
+  for (let seed = 1; seed <= 20; seed++) {
+    const w = Core.createWorld(seed);
+    Core.ensure(w, Core.STAGE_PX * 6);
+    for (const b of w.b) {
+      assert.ok(!('obs' in b.roof) && !('obs' in b.room), `seed ${seed}: じゃま物の置き場が残っている`);
+      const taken = new Set(['coin', 'tank', 'bomb', 'gift', 'gem', 'board', 'toycar']);
+      for (const it of b.roof.items.concat(b.room.items)) assert.ok(taken.has(it.t), `seed ${seed}: 知らない物 ${it.t}`);
     }
+  }
+  assert.strictEqual(Core.OBSTACLES, undefined);
+  // 道を走り続けても、壁いがいではつまずかない (1 本道の地上ステージ)
+  const g = Core.newGame({ seed: 5, noEnemies: true });
+  const st = makeBot();
+  let trips = 0;
+  for (let i = 0; i < 60 * 60 && !g.over; i++) { botStep(g, st, DT); Core.step(g, DT); trips += g.events.filter((e) => e.t === 'trip' && e.k !== 'wall').length; g.events.length = 0; }
+  assert.strictEqual(trips, 0);
+});
+
+test('ラジコンカーは、つかまりそうになると敵をはね飛ばして守る。スケボーは守らない', () => {
+  for (const [kind, shield] of [['board', false], ['toycar', true]]) {
+    const { b } = streetGame(5);
+    const g = Core.newGame({ seed: 5 });
+    Core.ensure(g.world, 8000 * 3);
+    g.p.x = b.x + 300; g.p.y = b.roofY; g.p.inside = -1;
+    giveRide(g, kind);
+    g.enemies.length = 0;
+    // 敵を主人公のすぐ後ろへ (つかまる位置)
+    const e = Core.spawnEnemy(g, 'suit', 0);
+    e.x = g.p.x - 5; e.y = b.roofY; e.onGround = true;
+    const seen = new Set();
+    for (let i = 0; i < 20 && !g.over; i++) { Core.step(g, DT); g.events.forEach((ev) => seen.add(ev.t)); g.events.length = 0; }
+    if (shield) assert.ok(!g.over && seen.has('smash') && e.state !== 'chase', `守った ${g.over} ${[...seen]}`);
+    else assert.strictEqual(g.over, 'caught');
   }
 });
 
@@ -683,7 +616,6 @@ test('乗ったまま地上の道を出ない: 道の終わりの手前で降り
   const b = g.world.b.filter((q) => q.ground && stageOf(q.x) === 2).pop();
   function stageOf(x) { return Core.stageOf(x); }
   g.p.x = b.x + b.w - 400; g.p.y = b.roofY; g.p.inside = -1; g.stage = 2;
-  b.roof.obs.length = 0;
   giveRide(g, 'board'); g.p.ride.t = 99;
   let offAt = null;
   for (let i = 0; i < 60 * 5 && offAt == null; i++) {
@@ -695,7 +627,6 @@ test('乗ったまま地上の道を出ない: 道の終わりの手前で降り
   const muzzle = (ride) => {
     const { g: h, b: sb } = streetGame(2);
     h.p.x = sb.x + 60; h.p.y = sb.roofY; h.p.inside = -1;
-    sb.roof.obs.length = 0;
     if (ride) giveRide(h, 'toycar');
     Core.input(h, 'fire', true); Core.step(h, DT);
     return h.shots[0] ? h.shots[0].y - sb.roofY : null;
@@ -708,7 +639,7 @@ test('乗ったまま地上の道を出ない: 道の終わりの手前で降り
 function airGame() {
   const g = Core.newGame({ seed: 7, noEnemies: true });
   const b = g.world.b[0];
-  b.roof.obs.length = 0; b.roof.items.length = 0;
+  b.roof.items.length = 0;
   g.p.x = 200; g.p.y = b.roofY;
   return { g, b };
 }
@@ -769,4 +700,96 @@ test('2 だんジャンプは、谷の保証を変えない: 自動プレイは�
   for (let i = 0; i < 60 * 40 && !g.over; i++) { botStep(g, st, DT); Core.step(g, DT); g.events.length = 0; }
   assert.strictEqual(g.over, null);
   assert.strictEqual(g.p.jumps2, 0);
+});
+
+// ------------------------------------------------------------ 宝石・きたえる
+test('宝石: 4 種類がそろい、屋上・屋内・地上に出る。高い宝石 (2 だんジャンプの高さ) もある', () => {
+  const kinds = {}, where = new Set(), ys = new Set();
+  let total = 0;
+  for (let seed = 1; seed <= 20; seed++) {
+    const w = Core.createWorld(seed);
+    Core.ensure(w, Core.STAGE_PX * 6);
+    for (const b of w.b) {
+      for (const [name, L, base] of [['roof', b.roof, b.roofY], ['room', b.room, b.floorY]]) {
+        for (const it of L.items) {
+          if (it.t !== 'gem') continue;
+          assert.ok(Core.GEMS[it.k], `知らない宝石 ${it.k}`);
+          kinds[it.k] = (kinds[it.k] || 0) + 1; total++;
+          where.add(b.ground ? 'ground' : name);
+          ys.add(base - it.y);
+        }
+      }
+    }
+  }
+  assert.deepStrictEqual(Object.keys(kinds).sort(), ['diamond', 'emerald', 'ruby', 'sapphire']);
+  assert.ok(kinds.ruby > kinds.sapphire && kinds.sapphire > kinds.emerald && kinds.emerald > kinds.diamond, JSON.stringify(kinds));
+  assert.deepStrictEqual([...where].sort(), ['ground', 'roof', 'room']);
+  assert.ok(ys.has(Core.GEM_Y[1]) && ys.has(Core.GEM_Y[2]) && ys.has(Core.GEM_Y[0]), [...ys].join());
+  // 6 ステージ (1200m) で、見ごたえのある数
+  assert.ok(total / 20 > 40 && total / 20 < 120, `1 つの世界に ${total / 20} 個`);
+});
+
+test('宝石を取ると、ポイントが入る。高さしだいで、取れる跳びかたがちがう', () => {
+  const { g, b } = airGame();
+  b.roof.items.length = 0;
+  b.roof.items.push({ x: g.p.x + 5, y: b.roofY - 26, t: 'gem', k: 'diamond' });
+  Core.step(g, DT);
+  assert.strictEqual(g.gems, 10);
+  assert.ok(g.events.some((e) => e.t === 'gem' && e.k === 'diamond' && e.n === 10));
+  // 空中で届く最高の高さ: 長おし 1 だん / 2 だん
+  const apex = (second) => {
+    const { g: h, b: hb } = airGame();
+    hb.roof.items.length = 0;
+    press(h);
+    let top = 0;
+    for (let i = 0; i < 160 && !(h.p.onGround && i > 5); i++) {
+      if (second && i === 18) { Core.input(h, 'jump', false); press(h); }
+      Core.step(h, DT); top = Math.max(top, hb.roofY - h.p.y);
+    }
+    return top;
+  };
+  const one = apex(false), two = apex(true);
+  const need = (tier) => Core.GEM_Y[tier] - 24 - 30;           // 足もとをこの高さまで上げれば取れる
+  assert.ok(one >= need(1) && one < need(2), `長おし 1 だんの最高 ${one.toFixed(0)} (1 段目の宝石 ${need(1)}・2 段目の宝石 ${need(2)})`);
+  assert.ok(two >= need(2), `2 だんジャンプの最高 ${two.toFixed(0)}`);
+});
+
+test('きたえる: ジャンプは高く、水でっぽうは強く、タンクは水が へりにくくなる。上限がある', () => {
+  const peak = (up) => {
+    const g = Core.newGame({ seed: 7, noEnemies: true, up });
+    const b = g.world.b[0];
+    g.p.x = 200; g.p.y = b.roofY;
+    press(g); Core.input(g, 'jump', true);
+    let top = 0;
+    for (let i = 0; i < 100; i++) { Core.step(g, DT); top = Math.max(top, b.roofY - g.p.y); }
+    return top;
+  };
+  const p0 = peak({}), p5 = peak({ jump: 5 }), p10 = peak({ jump: 10 });
+  assert.ok(p5 > p0 * 1.2 && p10 > p5 * 1.3, `頂点 ${p0.toFixed(0)} → ${p5.toFixed(0)} → ${p10.toFixed(0)}`);
+  // 威力: 1 発で倒せなかった敵が、強化すると倒せる (スナイパーの dmg 5 は固定、ミズデッポウ dmg 1 の hp 3 の敵を何発で倒すか)
+  const shots = (up) => {
+    const g = Core.newGame({ seed: 2, noEnemies: true, up });
+    const e = Core.spawnEnemy(g, 'suit', g.p.x - 100);
+    let n = 0;
+    while (e.state === 'chase' && n < 50) { Core.applyHit(g, e, { dmg: 1 }); n++; }
+    return n;
+  };
+  assert.ok(shots({ power: 10 }) < shots({}), `${shots({})} 発 → ${shots({ power: 10 })} 発`);
+  const used = (up) => {
+    const g = Core.newGame({ seed: 2, noEnemies: true, up });
+    g.water = 100; Core.input(g, 'fire', true);
+    for (let i = 0; i < 60; i++) Core.step(g, DT);
+    return 100 - g.water;
+  };
+  assert.ok(used({ tank: 10 }) < used({}) * 0.85, `水のへり ${used({}).toFixed(1)} → ${used({ tank: 10 }).toFixed(1)}`);
+  const g = Core.newGame({ seed: 1, up: { jump: 99, power: -3, tank: 2.9 } });
+  assert.deepStrictEqual(g.up, { jump: 10, power: 0, tank: 2 });
+  assert.ok(Core.gemCost(0) < Core.gemCost(5) && Core.gemCost(9) <= 60);
+});
+
+test('きたえても谷の保証は変わらない: 強化を最大にしても自動プレイは走りきる', () => {
+  const g = Core.newGame({ seed: 4, noEnemies: true, up: { jump: 10, power: 10, tank: 10 } });
+  const st = makeBot();
+  for (let i = 0; i < 60 * 60 && !g.over; i++) { botStep(g, st, DT); Core.step(g, DT); g.events.length = 0; }
+  assert.strictEqual(g.over, null);
 });

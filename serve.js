@@ -41,5 +41,5 @@ const server = http.createServer((req, res) => {
 });
 
 server.listen(PORT, () => {
-  console.log(`スパイ・ミント: http://localhost:${PORT}/`);
+  console.log(`スパイ・コン: http://localhost:${PORT}/`);
 });

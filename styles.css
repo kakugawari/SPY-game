@@ -1,4 +1,4 @@
-/* スパイ・ミント — 見た目。対象は iPhone 16 Plus (430 x 932) だけ。寸法は実機の 430pt で決め打つ。 */
+/* スパイ・コン — 見た目。対象は iPhone 16 Plus (430 x 932) だけ。寸法は実機の 430pt で決め打つ。 */
 
 :root {
   --ink: #2a2160;
@@ -154,7 +154,7 @@ button { font: inherit; color: inherit; touch-action: manipulation; }
   letter-spacing: .02em;
 }
 .logo-1 { font-size: 92px; color: var(--pink); }
-.logo-2 { font-size: 92px; color: var(--mint); margin-top: -6px; margin-left: 40px; }
+.logo-2 { font-size: 92px; color: var(--mint); margin-top: -6px; margin-left: 70px; }
 .ribbon {
   margin-top: 22px; padding: 7px 22px; border-radius: 999px; font-weight: 900; font-size: 17px; letter-spacing: .06em;
   background: var(--yellow); color: var(--ink); border: 3px solid #fff; box-shadow: 0 4px 0 rgba(42,33,96,.45);

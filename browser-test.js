@@ -154,7 +154,7 @@ async function run() {
       stageW: document.getElementById('stage').clientWidth
     }));
     ok(fit.wide <= 1 && fit.high <= 1, `横にも縦にもスクロールが出ない (${fit.wide}, ${fit.high})`);
-    ok(fit.title === 'スパイ・ミント', `題名が出ている (${fit.title})`);
+    ok(fit.title === 'スパイ・コン', `題名が出ている (${fit.title})`);
     ok(fit.mode === 'title' && fit.titleShown && fit.padHidden && fit.hudHidden && fit.shopHidden,
       'タイトルでは、そうさボタン・HUD・ぶきやが隠れている (hidden が効く)');
     ok(fit.cvW >= fit.stageW * 2 - 2 && fit.cvW <= fit.stageW * 2 + 2, `キャンバスが実寸に合っている (${fit.cvW} / ${fit.stageW})`);

@@ -131,6 +131,7 @@ button { font: inherit; color: inherit; touch-action: manipulation; }
 @keyframes blink { 50% { transform: scale(1.18); } }
 
 #toast {
+  white-space: pre-line;
   position: absolute; left: 50%; top: 128px; transform: translateX(-50%); width: max-content; max-width: 380px;
   padding: 9px 16px; border-radius: 999px; text-align: center; font-weight: 800; font-size: 15px; line-height: 1.35;
   background: rgba(255,248,252,.96); color: var(--ink); box-shadow: 0 3px 0 rgba(42,33,96,.45);
@@ -213,6 +214,7 @@ button { font: inherit; color: inherit; touch-action: manipulation; }
 .gicon { grid-row: span 2; width: 56px; height: 56px; border-radius: 16px; display: grid; place-items: center; font-size: 30px; border: 3px solid rgba(42,33,96,.18); }
 .gname { font-weight: 900; font-size: 16px; line-height: 1.2; }
 .gdesc { grid-column: 2 / 4; font-size: 12px; line-height: 1.5; font-weight: 700; color: #54489a; }
+.gtrait { display: inline-block; margin: 0 6px 3px 0; padding: 2px 9px; border-radius: 99px; font-size: 11px; font-weight: 900; color: #fff; background: linear-gradient(#ff8fb2, #ff4f86); vertical-align: 1px; }
 .gstats { grid-column: 1 / 4; display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px 10px; margin-top: 2px; }
 .gstat { display: flex; align-items: center; gap: 5px; font-size: 11px; font-weight: 800; color: #54489a; }
 .gstat i { flex: 1; height: 7px; border-radius: 99px; background: #e5defa; overflow: hidden; position: relative; }

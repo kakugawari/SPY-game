@@ -940,9 +940,31 @@
     switch (ev.t) {
       case 'shoot': {
         const gun = C.GUN_BY_ID[ev.gun];
-        drops(ev.x - 10, ev.y, 2, gun.color, 90, 10);
+        const R = gun.flash || 9;
+        addFx({ k: 'glow', x: ev.x, y: ev.y, r: R, life: 0.12, col: gun.color });                    // 銃口の光 (銃の色・大きさは銃ごと)
+        switch (ev.gun) {
+          case 'shot':    for (let i = 0; i < 12; i++) { const an = (Math.random() - 0.5) * 1.1; addFx({ k: 'drop', x: ev.x, y: ev.y, vx: -Math.cos(an) * (260 + Math.random() * 200), vy: Math.sin(an) * 300, life: 0.35, max: 0.35, r: 2 + Math.random() * 2, col: gun.color }); } break;
+          case 'sniper':  addFx({ k: 'ring', x: ev.x, y: ev.y, r: 4, max: 38, life: 0.2, col: 'rgba(241,221,255,.95)' }); break;
+          case 'bazooka': for (let i = 0; i < 6; i++) addFx({ k: 'puff', x: ev.x, y: ev.y, vx: -Math.random() * 120, vy: -Math.random() * 60, r: 5 + Math.random() * 5, life: 0.5, max: 0.5 }); break;
+          case 'hose':    for (let i = 0; i < 4; i++) addFx({ k: 'drop', x: ev.x, y: ev.y, vx: -120 - Math.random() * 160, vy: (Math.random() - 0.5) * 120, life: 0.4, max: 0.4, r: 2 + Math.random() * 2, col: '#7fb2ff' }); break;
+          case 'ice':     for (let i = 0; i < 5; i++) addFx({ k: 'spark', x: ev.x, y: ev.y, vx: -Math.random() * 150, vy: (Math.random() - 0.5) * 150, life: 0.35, max: 0.35, col: '#e7fbff' }); break;
+          case 'bubble':  addFx({ k: 'ring', x: ev.x - 6, y: ev.y, r: 3, max: 16, life: 0.25, col: 'rgba(189,224,254,.95)' }); break;
+          case 'rainbow': ['#ff6b6b', '#ffd166', '#06d6a0', '#4cc9f0', '#c77dff'].forEach((col, i) => addFx({ k: 'spark', x: ev.x, y: ev.y, vx: -80 - i * 28, vy: (i - 2) * 40, life: 0.4, max: 0.4, col: col })); break;
+          case 'shock':   addFx({ k: 'arcline', x: ev.x, y: ev.y, x2: ev.x - 34, y2: ev.y + (Math.random() - 0.5) * 20, life: 0.12, col: '#fff7b0' }); break;
+          case 'gatling': addFx({ k: 'spark', x: ev.x, y: ev.y - 2, vx: 30 + Math.random() * 40, vy: -60 - Math.random() * 50, life: 0.3, max: 0.3, col: '#ffe9a8' }); break;   // 薬きょうのかわり: 水のつぶ
+          default: drops(ev.x - 10, ev.y, 2, gun.color, 90, 10);
+        }
         break;
       }
+      case 'beam': {
+        const gun = C.GUN_BY_ID[ev.gun];
+        addFx({ k: 'beam', x: ev.x, y: ev.y, x2: ev.x2, y2: ev.y2, life: 0.1, col: gun.color });
+        break;
+      }
+      case 'arc':
+        addFx({ k: 'arcline', x: ev.x, y: ev.y, x2: ev.x2, y2: ev.y2, life: 0.2, col: '#fff7b0' });
+        drops(ev.x2, ev.y2, 4, '#ffe66d', 160, 80);
+        break;
       case 'hit':
         drops(ev.x, ev.y, 7, '#9be4ff', 190, 90);
         addFx({ k: 'ring', x: ev.x, y: ev.y, r: 4, max: 20, life: 0.25, col: 'rgba(255,255,255,.9)' });
@@ -1025,6 +1047,26 @@
         c.globalAlpha = Math.max(0, Math.min(1, f.life / f.lifeMax * 1.6));
         c.strokeStyle = f.col; c.lineWidth = 3;
         c.beginPath(); c.arc(f.x, f.y, Math.max(0, f.r + (f.max - f.r) * Math.min(1, p * 1.4)), 0, TAU); c.stroke();
+      } else if (f.k === 'glow') {
+        const u2 = Math.max(0, f.life / f.lifeMax), R = f.r * (1.4 - 0.4 * u2);
+        const gr = c.createRadialGradient(f.x, f.y, 1, f.x, f.y, R);
+        gr.addColorStop(0, 'rgba(255,255,255,' + (0.95 * u2).toFixed(2) + ')');
+        gr.addColorStop(0.45, f.col); gr.addColorStop(1, 'rgba(255,255,255,0)');
+        c.globalAlpha = u2; c.fillStyle = gr; c.fillRect(f.x - R, f.y - R, R * 2, R * 2);
+      } else if (f.k === 'beam') {
+        const u2 = Math.max(0, f.life / f.lifeMax);
+        c.globalAlpha = u2; c.lineCap = 'round';
+        c.strokeStyle = f.col; c.lineWidth = 7; c.beginPath(); c.moveTo(f.x, f.y); c.lineTo(f.x2, f.y2); c.stroke();
+        c.strokeStyle = '#fff'; c.lineWidth = 2.5; c.beginPath(); c.moveTo(f.x, f.y); c.lineTo(f.x2, f.y2); c.stroke();
+      } else if (f.k === 'arcline') {
+        if (!f.pts) {                                    // ぎざぎざの稲妻の形 (1 回だけ決める)
+          f.pts = []; const n = 6;
+          for (let i = 0; i <= n; i++) { const u3 = i / n; f.pts.push([f.x + (f.x2 - f.x) * u3 + (i && i < n ? (Math.random() - 0.5) * 14 : 0), f.y + (f.y2 - f.y) * u3 + (i && i < n ? (Math.random() - 0.5) * 14 : 0)]); }
+        }
+        const u2 = Math.max(0, f.life / f.lifeMax);
+        c.globalAlpha = u2; c.lineJoin = 'round'; c.lineCap = 'round';
+        c.strokeStyle = 'rgba(255,230,109,.9)'; c.lineWidth = 5; c.beginPath(); f.pts.forEach((q, i) => (i ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]))); c.stroke();
+        c.strokeStyle = '#fff'; c.lineWidth = 1.8; c.beginPath(); f.pts.forEach((q, i) => (i ? c.lineTo(q[0], q[1]) : c.moveTo(q[0], q[1]))); c.stroke();
       } else if (f.k === 'spark') {
         c.globalAlpha = u;
         drawStar(c, f.x, f.y, 3.2, f.col);
@@ -1113,6 +1155,17 @@
       carry: p.carry, aim: view.aim || 0, shoot: view.shoot || 0, firing: (view.fireT || 0) > 0, vy: p.vy, gunId: gun.id, gunColor: gun.color
     });
     if (p.carry) drawProp(c, p.carry, p.x + 3, p.y - 62, Math.sin(t * 10) * 0.06);
+    if (gun.windup && p.charge > 0.01) {
+      const u = Math.min(1, p.charge / gun.windup), mx = p.x - 28, my = p.y - 34, ang = view.aim || 0;
+      c.save(); c.lineCap = 'round';
+      c.strokeStyle = 'rgba(255,80,110,' + (0.25 + 0.6 * u).toFixed(2) + ')'; c.lineWidth = 1.6 + u * 1.6; c.setLineDash([7, 5]);
+      c.beginPath(); c.moveTo(mx, my); c.lineTo(mx - Math.cos(ang) * 420, my + Math.sin(ang) * 420); c.stroke();
+      c.setLineDash([]);
+      c.strokeStyle = 'rgba(255,255,255,' + (0.4 + 0.5 * u).toFixed(2) + ')'; c.lineWidth = 2.5;
+      c.beginPath(); c.arc(mx, my, 16 - 10 * u, 0, TAU); c.stroke();
+      circle(c, mx, my, 2 + 3 * u, '#ff5d7a');
+      c.restore();
+    }
 
     // 投げ物・水
     for (const o of g.thrown) {

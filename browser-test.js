@@ -516,6 +516,76 @@ async function run() {
     }
     await ctx.close();
 
+    // ------------------------------------------------------------ 水でっぽうの違い
+    section('水でっぽうごとの違い (音・反動・くせの札)');
+    ({ ctx, page } = await freshPage(browser));
+    page.on('pageerror', (e) => errors.push('銃の違い: ' + e.message));
+    const feat = await page.evaluate(async () => {
+      const out = {};
+      for (const id of Object.keys(window.Sfx.GUN)) {
+        for (const ramp of (id === 'gatling' ? [0, 1] : [0])) {
+          const d = await window.Sfx.renderOffline('GUN', id, { ramp }, 0.6);
+          let pk = 0, e = 0, zc = 0; const n = d.length;
+          for (let i = 0; i < n; i++) { const v = d[i]; pk = Math.max(pk, Math.abs(v)); e += v * v; if (i && (v >= 0) !== (d[i - 1] >= 0)) zc++; }
+          let end = 0; for (let i = n - 1; i >= 0; i--) if (Math.abs(d[i]) > pk * 0.03) { end = i; break; }
+          out[id + (id === 'gatling' ? ramp : '')] = { peak: pk, zcr: zc / (n / 22050), len: end / 22050 };
+        }
+      }
+      for (const nm of Object.keys(window.Sfx.EXTRA)) {
+        const d = await window.Sfx.renderOffline('EXTRA', nm, {}, 0.6); let pk = 0; for (const v of d) pk = Math.max(pk, Math.abs(v)); out['x:' + nm] = { peak: pk };
+      }
+      return { out, ids: Object.keys(window.Core.GUN_BY_ID), recipes: Object.keys(window.Sfx.GUN) };
+    });
+    const f = feat.out;
+    ok(feat.ids.every((id) => feat.recipes.includes(id)) && feat.recipes.length === feat.ids.length, `13 丁ぜんぶに、専用の音がある (${feat.recipes.length} / ${feat.ids.length})`);
+    const peaks = Object.entries(f).map(([k, v]) => [k, v.peak]);
+    ok(peaks.every(([, pk]) => pk >= 0.1 && pk <= 0.9), `どの音も、小さすぎず割れない大きさ (最小 ${Math.min(...peaks.map((x) => x[1])).toFixed(2)} / 最大 ${Math.max(...peaks.map((x) => x[1])).toFixed(2)})`);
+    ok(f.sniper.peak > f.mizu.peak * 2.2 && f.shot.peak > f.mizu.peak * 2.2 && f.bazooka.peak > f.mizu.peak * 2, `重い銃 (スナイパー・ショットガン・バズーカ) は、ふつうの銃の 2 倍以上おおきく鳴る (${(f.sniper.peak / f.mizu.peak).toFixed(1)} / ${(f.shot.peak / f.mizu.peak).toFixed(1)} / ${(f.bazooka.peak / f.mizu.peak).toFixed(1)} 倍)`);
+    ok(f.gatling1.zcr > f.gatling0.zcr * 1.3, `マシンガンは、加速するほど音が高くなる (${Math.round(f.gatling0.zcr)} → ${Math.round(f.gatling1.zcr)})`);
+    const keys = Object.keys(f).filter((k) => !k.startsWith('x:') && k !== 'gatling1');
+    let same = [];
+    for (let i = 0; i < keys.length; i++) for (let j = i + 1; j < keys.length; j++) {
+      const a = f[keys[i]], b = f[keys[j]];
+      const differs = Math.abs(Math.log(a.zcr / b.zcr)) > 0.12 || Math.abs(a.len - b.len) > 0.02 || Math.abs(Math.log(a.peak / b.peak)) > 0.3;
+      if (!differs) same.push(keys[i] + '/' + keys[j]);
+    }
+    ok(same.length === 0, `どの 2 丁を比べても、音の高さ・長さ・大きさのどれかがはっきり違う (似すぎ: ${same.join(', ') || 'なし'})`);
+
+    // 反動と、くせの札
+    await page.evaluate(() => window.__app.start({ seed: 21, noEnemies: true }));
+    const kick = await page.evaluate(async () => {
+      const g = window.__app.game(), a = window.__app.state();
+      const res = {};
+      for (const id of ['mizu', 'sniper', 'bazooka']) {
+        g.guns = window.Core.GUNS.map((x) => x.id); g.gunIdx = g.guns.indexOf(id); g.water = 100; g.p.cd = 0; g.p.charge = 0; a.shake = 0;
+        window.__app.press('fire', true);
+        let mx = 0; const t0 = performance.now();
+        while (performance.now() - t0 < 900) { await new Promise((r) => setTimeout(r, 16)); mx = Math.max(mx, a.shake); }
+        window.__app.press('fire', false);
+        res[id] = mx;
+      }
+      return res;
+    });
+    ok(kick.sniper > kick.mizu + 0.1 && kick.bazooka > kick.sniper, `重い銃ほど、撃つと画面がゆれる (ふつう ${kick.mizu.toFixed(2)} < スナイパー ${kick.sniper.toFixed(2)} < バズーカ ${kick.bazooka.toFixed(2)})`);
+    // スナイパーの「ため」: 押している途中は撃たず、レーザーサイトが出る
+    const charge = await page.evaluate(async () => {
+      const g = window.__app.game();
+      g.gunIdx = g.guns.indexOf('sniper'); g.water = 100; g.p.cd = 0; g.p.charge = 0; g.shots.length = 0;
+      window.__app.press('fire', true);
+      await new Promise((r) => setTimeout(r, 200));
+      const mid = { ch: g.p.charge, shots: g.shots.length };
+      window.__app.press('fire', false);
+      await new Promise((r) => setTimeout(r, 200));
+      return { mid, after: g.p.charge, shots: g.shots.length };
+    });
+    ok(charge.mid.ch > 0.1 && charge.mid.shots === 0 && charge.after < 0.05 && charge.shots === 0, `スナイパーは押している間「ため」(${charge.mid.ch.toFixed(2)})、離すと撃たずに消える`);
+    await page.evaluate(() => window.__app.show('title'));
+    await page.locator('#btnShop').tap();
+    await page.waitForFunction(() => window.__app.state().mode === 'shop');
+    const traits = await page.evaluate(() => [...document.querySelectorAll('.gcard')].map((c) => (c.querySelector('.gtrait') || {}).textContent || ''));
+    ok(traits.length === 13 && traits.every((x) => x.length >= 4) && new Set(traits).size === 13, `ぶきやの 13 枚の札すべてに、ちがう「くせ」が出る (${traits.filter(Boolean).length} 枚)`);
+    await ctx.close();
+
     // ------------------------------------------------------------ いちじていし
     section('いちじていし・アプリを切りかえたとき');
     ({ ctx, page } = await freshPage(browser));

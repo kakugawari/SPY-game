@@ -69,43 +69,43 @@
   const GUNS = [
     { id: 'mizu', name: 'ミズデッポウ', icon: '🔫', color: '#4cc9f0', price: 0,
       desc: 'ふつうの水でっぽう。つかいやすい。',
-      cd: 0.22, cost: 2, n: 1, spread: 0.03, speed: 640, range: 240, dmg: 1, push: 12, wet: 0.5, r: 5 },
+      cd: 0.22, cost: 2, n: 1, spread: 0.03, speed: 640, range: 240, dmg: 1, push: 12, wet: 0.5, r: 5, trait: 'くせなし・つかいやすい', kick: 0.02, flash: 8 },
     { id: 'twin', name: 'ツインスプラッシュ', icon: '💦', color: '#5fd0ff', price: 90,
       desc: '2本ならんで出る。当たりやすい。',
-      cd: 0.26, cost: 3.4, n: 2, spread: 0.02, offset: 7, speed: 640, range: 240, dmg: 1, push: 12, wet: 0.5, r: 5 },
+      cd: 0.26, cost: 3.4, n: 2, spread: 0.02, offset: 7, speed: 640, range: 240, dmg: 1, push: 12, wet: 0.5, r: 5, trait: 'ふたつ同時に飛ぶ', kick: 0.03, flash: 10 },
     { id: 'shot', name: 'ショットガン', icon: '🎯', color: '#ffb347', price: 160,
       desc: 'ちかくでドーン! 5つぶ散らして、大きくふき飛ばす。',
-      cd: 0.65, cost: 7.5, n: 5, spread: 0.3, speed: 560, range: 160, dmg: 1, push: 26, wet: 0.6, r: 6 },
+      cd: 0.65, cost: 7.5, n: 5, spread: 0.3, speed: 560, range: 160, dmg: 1, push: 26, wet: 0.6, r: 6, trait: 'ちかくでドカン・大きく飛ばす', kick: 0.16, flash: 20 },
     { id: 'gatling', name: 'マシンガン', icon: '⚡', color: '#7bdff2', price: 240,
       desc: 'ものすごい連射。ちょっとずつ削る。',
-      cd: 0.07, cost: 0.65, n: 1, spread: 0.09, speed: 700, range: 250, dmg: 0.45, push: 5, wet: 0.2, r: 4 },
+      cd: 0.07, cost: 0.65, n: 1, spread: 0.09, speed: 700, range: 250, dmg: 0.45, push: 5, wet: 0.2, r: 4, trait: 'ながおしで連射がどんどん加速', ramp: { from: 0.22, to: 0.055, t: 0.9 }, kick: 0.03, flash: 7 },
     { id: 'sniper', name: 'スナイパー', icon: '🔭', color: '#c77dff', price: 320,
       desc: '遠くまで届く強い一発。3人まで貫通。',
-      cd: 0.95, cost: 8, n: 1, spread: 0, speed: 1300, range: 520, dmg: 5, push: 40, wet: 1, pierce: 2, r: 5 },
+      cd: 0.55, cost: 8, n: 1, spread: 0, speed: 1300, range: 520, dmg: 5, push: 40, wet: 1, pierce: 2, r: 5, trait: 'ねらって「ため」てから撃つ', windup: 0.4, kick: 0.22, flash: 18 },
     { id: 'cutter', name: 'ウォーターカッター', icon: '📏', color: '#e0fbfc', price: 420,
       desc: '細くてするどい水。ならんだ敵を全部つらぬく。',
-      cd: 0.05, cost: 0.8, n: 1, spread: 0.01, speed: 1500, range: 360, dmg: 0.55, push: 2, wet: 0.2, pierce: 99, r: 3 },
+      cd: 0.08, cost: 0.9, n: 1, spread: 0.01, speed: 1500, range: 360, dmg: 0.5, push: 2, wet: 0.2, pierce: 99, r: 3, trait: 'ビーム! いっしゅんで全員つらぬく', beam: true, kick: 0.02, flash: 9 },
     { id: 'hose', name: 'ホース', icon: '🚒', color: '#3a86ff', price: 520,
       desc: 'ざあざあ放水。敵をぐいぐい押し戻す。',
-      cd: 0.04, cost: 0.8, n: 1, spread: 0.12, speed: 520, range: 220, dmg: 0.22, push: 20, wet: 0.15, r: 11 },
+      cd: 0.04, cost: 0.8, n: 1, spread: 0.12, speed: 520, range: 220, dmg: 0.22, push: 20, wet: 0.15, r: 11, trait: 'ずっと押しもどす放水', kick: 0.05, flash: 12 },
     { id: 'homing', name: 'ホーミングガン', icon: '🌀', color: '#80ffdb', price: 660,
       desc: '敵をおいかけて曲がる。ねらわなくていい。',
-      cd: 0.38, cost: 3.5, n: 1, spread: 0.3, speed: 520, range: 430, dmg: 1.3, push: 14, wet: 0.6, homing: 7, r: 6 },
+      cd: 0.38, cost: 3.5, n: 1, spread: 0.3, speed: 520, range: 430, dmg: 1.3, push: 14, wet: 0.6, homing: 7, r: 6, trait: 'ぐるっと曲がって追いかける', kick: 0.03, flash: 9 },
     { id: 'bazooka', name: 'みずふうせんバズーカ', icon: '🎈', color: '#ff6b9d', price: 820,
       desc: '水風船がはじけて、まわりをまとめてびしょぬれ。',
-      cd: 1.1, cost: 12, n: 1, spread: 0.02, speed: 520, range: 300, dmg: 3, push: 50, wet: 1.5, splash: 62, grav: 900, r: 8 },
+      cd: 1.1, cost: 12, n: 1, spread: 0.02, speed: 520, range: 300, dmg: 3, push: 50, wet: 1.5, splash: 62, grav: 900, r: 8, trait: 'ふわっと弧をえがいてはじける', kick: 0.3, flash: 22 },
     { id: 'ice', name: 'コオリみずガン', icon: '❄️', color: '#a8dadc', price: 980,
       desc: 'つめたい水で敵がカチコチ。うごきがかなり遅くなる。',
-      cd: 0.3, cost: 3.5, n: 1, spread: 0.04, speed: 620, range: 240, dmg: 0.5, push: 6, wet: 0.5, freeze: 1.8, r: 6 },
+      cd: 0.3, cost: 3.5, n: 1, spread: 0.04, speed: 620, range: 240, dmg: 0.5, push: 6, wet: 0.5, freeze: 1.8, r: 6, trait: 'こおって、うごきがおそくなる', kick: 0.03, flash: 12 },
     { id: 'bubble', name: 'あわあわガン', icon: '🫧', color: '#bde0fe', price: 1150,
       desc: 'ふわふわの泡で敵をとじこめる。',
-      cd: 0.55, cost: 5, n: 1, spread: 0.06, speed: 210, range: 380, dmg: 0.3, push: 0, wet: 0.4, trap: 1.4, r: 15 },
+      cd: 0.55, cost: 5, n: 1, spread: 0.06, speed: 210, range: 380, dmg: 0.3, push: 0, wet: 0.4, trap: 1.4, r: 15, trait: 'ふわふわ泡でとじこめる', kick: 0.0, flash: 13 },
     { id: 'shock', name: 'ビリビリみずガン', icon: '🔌', color: '#ffe66d', price: 1300,
       desc: 'しびれる水。まわりの敵もまとめて動けなくする。',
-      cd: 0.45, cost: 5, n: 1, spread: 0.03, speed: 640, range: 240, dmg: 0.5, push: 4, wet: 0.4, stun: 0.9, splash: 40, r: 6 },
+      cd: 0.45, cost: 5, n: 1, spread: 0.03, speed: 640, range: 240, dmg: 0.5, push: 4, wet: 0.4, stun: 0.9, r: 6, trait: 'しびれが近くの敵へ連鎖する', chain: { n: 2, r: 170, mul: 0.6 }, kick: 0.05, flash: 12 },
     { id: 'rainbow', name: 'にじいろガン', icon: '🌈', color: '#ff99c8', price: 1600,
       desc: '当たるとコインがこぼれる。ぜんぶ入りの最強水でっぽう。',
-      cd: 0.12, cost: 2, n: 1, spread: 0.05, speed: 700, range: 280, dmg: 1, push: 14, wet: 0.6, coin: 1, r: 6 }
+      cd: 0.12, cost: 2, n: 1, spread: 0.05, speed: 700, range: 280, dmg: 1, push: 14, wet: 0.6, coin: 1, r: 6, trait: '当てるとコインがこぼれる', kick: 0.04, flash: 11 }
   ];
   const GUN_BY_ID = {};
   GUNS.forEach((gun) => { GUN_BY_ID[gun.id] = gun; });
@@ -485,7 +485,7 @@
       p: {
         x: 0, y: world.b[0].roofY, vx: 0, vy: 0, hw: PLAYER_HW, h: PLAYER_H,
         onGround: true, ground: 0.1, inside: -1, stun: 0, inv: 0, carry: null, cd: 0,
-        anim: 0, jumping: false, blocked: false
+        anim: 0, jumping: false, blocked: false, hold: 0, charge: 0, gunPrev: null
       },
       in: { jumpHeld: false, fireHeld: false, jumpBuf: 0, doorBuf: 0, grabBuf: 0, bombBuf: 0 },
       guns: guns,
@@ -826,7 +826,18 @@
       a = clamp(Math.atan2(enemyCenterY(tgt) - sy, p.x - tgt.x), -0.5, 0.5);
     }
     const ref = speedAt(p.x);
-    for (let i = 0; i < gun.n; i++) {
+    // ビーム: 玉は飛ばさず、線の上にいる敵 (射程まで) をいっぺんに当てる
+    if (gun.beam) {
+      const ca = Math.cos(a), sa = Math.sin(a);
+      for (const e of g.enemies) {
+        if (e.state !== 'chase' || e.inside !== p.inside) continue;
+        const t = (sx - e.x) / ca;
+        if (t < -8 || t > gun.range) continue;
+        if (Math.abs(sy + sa * t - enemyCenterY(e)) <= e.h / 2 + 7) applyHit(g, e, gun, e.x, enemyCenterY(e));
+      }
+      emit(g, 'beam', sx, sy, { gun: gun.id, x2: sx - ca * gun.range, y2: sy + sa * gun.range });
+    }
+    for (let i = 0; i < (gun.beam ? 0 : gun.n); i++) {
       let da;
       if (gun.n > 1 && gun.spread > 0.1) da = (i / (gun.n - 1) - 0.5) * 2 * gun.spread;
       else da = (g.rng() - 0.5) * 2 * gun.spread;
@@ -840,9 +851,32 @@
         hits: [], pierce: gun.pierce || 0, rot: g.rng() * 6
       });
     }
-    p.cd = gun.cd;
+    // 連射が加速する銃: 押しつづけた長さで、つぎの間隔がちぢむ
+    let ramp = 0;
+    if (gun.ramp) {
+      ramp = Math.min(1, p.hold / gun.ramp.t);
+      p.cd = gun.ramp.from + (gun.ramp.to - gun.ramp.from) * ramp;
+    } else {
+      p.cd = gun.cd;
+    }
     g.water = Math.max(0, g.water - gun.cost);
-    emit(g, 'shoot', sx, sy, { gun: gun.id });
+    emit(g, 'shoot', sx, sy, { gun: gun.id, ramp: ramp });
+  }
+
+  /** しびれの連鎖: あたった敵のそばの敵へ、つづけてしびれが走る。 */
+  function chainHit(g, from, gun, shot) {
+    const ch = gun.chain;
+    const near = g.enemies
+      .filter((e) => e.state === 'chase' && e.inside === from.inside && e.id !== from.id && shot.hits.indexOf(e.id) < 0 && Math.abs(e.x - from.x) <= ch.r)
+      .sort((a, b) => Math.abs(a.x - from.x) - Math.abs(b.x - from.x))
+      .slice(0, ch.n);
+    let prev = from;
+    for (const e of near) {
+      applyHit(g, e, { dmg: gun.dmg * ch.mul, stun: gun.stun * 0.8, wet: gun.wet * 0.5, push: 0 }, e.x, enemyCenterY(e));
+      shot.hits.push(e.id);
+      emit(g, 'arc', prev.x, enemyCenterY(prev), { x2: e.x, y2: enemyCenterY(e) });
+      prev = e;
+    }
   }
 
   function stepShots(g, dt) {
@@ -884,6 +918,7 @@
             hitE = e;
             applyHit(g, e, gun, s.x, s.y);
             s.hits.push(e.id);
+            if (gun.chain) chainHit(g, e, gun, s);
             if (gun.splash) {
               splashHit(g, s.x, s.y, s.inside, gun.splash, {
                 dmg: gun.splash > 50 ? gun.dmg * 0.5 : 0, push: gun.push * 0.5, wet: gun.wet, stun: gun.stun, freeze: gun.freeze
@@ -1176,8 +1211,21 @@
     collect(g);
 
     // 武器
-    if (I.fireHeld && !p.carry && p.cd <= 0) {
-      const gun = curGun(g);
+    const gun = curGun(g);
+    if (p.gunPrev !== gun.id) { p.gunPrev = gun.id; p.hold = 0; p.charge = 0; }
+    const trigger = I.fireHeld && !p.carry;
+    p.hold = trigger ? p.hold + dt : 0;                   // 押しつづけた秒数 (離すと 0)
+    if (gun.windup) {
+      // ため撃ち: 押しつづけて「ため」が終わると撃つ。途中で離すとやりなおし
+      if (trigger && p.cd <= 0 && g.water >= gun.cost) {
+        if (p.charge === 0) emit(g, 'charge', p.x, p.y, { gun: gun.id });
+        p.charge += dt;
+        if (p.charge >= gun.windup) { fireGun(g); p.charge = 0; }
+      } else {
+        p.charge = Math.max(0, p.charge - dt * 3);
+        if (trigger && p.cd <= 0 && g.water < gun.cost) { p.cd = 0.25; if (g.dryT <= 0) { emit(g, 'dry', p.x, p.y); g.dryT = 1; } }
+      }
+    } else if (trigger && p.cd <= 0) {
       if (g.water >= gun.cost) fireGun(g);
       else { p.cd = 0.25; if (g.dryT <= 0) { emit(g, 'dry', p.x, p.y); g.dryT = 1; } }
     }

@@ -53,7 +53,12 @@
         try {
           const AC = window.AudioContext || window.webkitAudioContext;
           ac = AC ? new AC() : false;
-          if (ac) { master = ac.createGain(); master.gain.value = 0.5; master.connect(ac.destination); }
+          if (ac) {
+            master = ac.createGain(); master.gain.value = 0.9;
+            const comp = ac.createDynamicsCompressor();          // 重なっても音が割れないように
+            comp.threshold.value = -10; comp.ratio.value = 6; comp.attack.value = 0.003; comp.release.value = 0.12;
+            master.connect(comp); comp.connect(ac.destination);
+          }
         } catch (e) { ac = false; }
       }
       if (ac && ac.state === 'suspended') ac.resume();
@@ -85,6 +90,22 @@
       s.connect(f); f.connect(g); g.connect(master);
       s.start(t0);
     }
+    // 水でっぽうごとの音 (レシピは sfx.js)
+    let kit = null;
+    function liveKit() {
+      const a = ctx();
+      if (!a || save.mute) return null;
+      if (!kit) kit = window.Sfx.makeKit(a, master);
+      return kit;
+    }
+    function gunSound(id, params) {
+      if (!throttle('gun:' + id, window.Sfx.MIN_GAP[id] || 70)) return;
+      const k = liveKit(); if (k && window.Sfx.GUN[id]) window.Sfx.GUN[id](k, params || {});
+    }
+    function extraSound(name) {
+      if (!throttle('x:' + name, 80)) return;
+      const k = liveKit(); if (k && window.Sfx.EXTRA[name]) window.Sfx.EXTRA[name](k);
+    }
     function throttle(key, ms) {
       const now = performance.now();
       if (last[key] && now - last[key] < ms) return false;
@@ -93,7 +114,6 @@
     function play(name) {
       switch (name) {
         case 'jump': tone(300, 640, 0.14, 'square', 0.07); break;
-        case 'shoot': if (throttle('shoot', 70)) { noise(0.07, 0.22, 2400, 0.9); tone(900, 500, 0.05, 'sine', 0.05); } break;
         case 'hit': if (throttle('hit', 60)) { tone(520, 260, 0.08, 'triangle', 0.14); } break;
         case 'splash': noise(0.25, 0.4, 900, 0.7); break;
         case 'explode': noise(0.5, 0.7, 380, 0.6); tone(160, 45, 0.4, 'sine', 0.35); break;
@@ -119,7 +139,9 @@
     function event(ev) {
       switch (ev.t) {
         case 'jump': play('jump'); break;
-        case 'shoot': play('shoot'); break;
+        case 'shoot': gunSound(ev.gun, { ramp: ev.ramp }); break;
+        case 'charge': extraSound('charge'); break;
+        case 'arc': extraSound('arc'); break;
         case 'hit': play('hit'); break;
         case 'splash': play('splash'); break;
         case 'explode': play('explode'); break;
@@ -315,7 +337,7 @@
       card.innerHTML =
         '<div class="gicon" style="background:' + gun.color + '33">' + gun.icon + '</div>' +
         '<div class="gname">' + gun.name + '</div>' + btn +
-        '<div class="gdesc">' + gun.desc + '</div>' +
+        '<div class="gdesc"><b class="gtrait">' + gun.trait + '</b>' + gun.desc + '</div>' +
         '<div class="gstats">' + bar('パワー', st.power, '#ff5d8f') + bar('とどく', st.range, '#4cc9f0') + bar('水もち', st.tank, '#4fd6b2') + '</div>';
       frag.appendChild(card);
     });
@@ -536,7 +558,7 @@
       A.handleEvent(ev);
       Snd.event(ev);
       switch (ev.t) {
-        case 'shoot': app.view.shoot = 1; app.view.fireT = 0.3; break;
+        case 'shoot': app.view.shoot = 1; app.view.fireT = 0.3; app.shake = Math.max(app.shake, C.GUN_BY_ID[ev.gun].kick || 0); break;
         case 'explode': app.shake = 0.4; break;
         case 'gift': {
           const gun = C.GUN_BY_ID[ev.gun];
@@ -545,7 +567,7 @@
         }
         case 'switch': {
           const gun = C.GUN_BY_ID[ev.gun];
-          toast(gun.icon + ' ' + gun.name, 1000);
+          toast(gun.icon + ' ' + gun.name + '\n' + gun.trait, 1700);
           break;
         }
         case 'dry': toast('水ぎれ! タンク💧をひろおう', 1400); break;

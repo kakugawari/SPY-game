@@ -188,20 +188,87 @@ test('dt が負でも 0 でも大きすぎても壊れない', () => {
   assert.ok(g.p.x > 0 && g.p.x < 20, `x=${g.p.x}`);
 });
 
-test('水でっぽうは 13 種類。名前・値段が重ならず、ぜんぶ撃てる', () => {
+test('水でっぽうは 13 種類。名前・値段が重ならず、くせの説明があり、ぜんぶ撃てる', () => {
   assert.ok(Core.GUNS.length >= 12);
   const ids = new Set(Core.GUNS.map((x) => x.id));
   assert.strictEqual(ids.size, Core.GUNS.length);
   assert.strictEqual(Core.GUNS[0].price, 0);
   for (const gun of Core.GUNS) {
+    assert.ok(gun.trait && gun.trait.length >= 4, `${gun.id}: くせの説明が無い`);
+    assert.ok(typeof gun.kick === 'number' && gun.kick >= 0 && gun.kick <= 0.4, `${gun.id}: 反動`);
+    assert.ok(gun.flash >= 6 && gun.flash <= 30, `${gun.id}: 銃口の光`);
     const g = Core.newGame({ seed: 7, noEnemies: true, guns: [gun.id] });
     Core.input(g, 'fire', true);
-    Core.step(g, DT);
-    assert.ok(g.shots.length >= gun.n, `${gun.id} が出ない`);
+    let fired = null;
+    for (let i = 0; i < 90 && !fired; i++) { Core.step(g, DT); fired = g.events.find((e) => e.t === 'shoot'); }
+    assert.ok(fired, `${gun.id} が撃てない`);
+    assert.ok(gun.beam || g.shots.length >= gun.n, `${gun.id} の玉が出ない`);
     assert.ok(g.water < 100 || gun.cost < 0.2, `${gun.id} の水が減らない`);
   }
+  assert.strictEqual(new Set(Core.GUNS.map((x) => x.trait)).size, Core.GUNS.length, 'くせの説明が重なっている');
 });
 
+test('マシンガン: 押しつづけると連射がどんどん加速し、離すと最初にもどる', () => {
+  const g = Core.newGame({ seed: 7, noEnemies: true, guns: ['gatling'] });
+  const times = [];
+  const run = (frames) => { for (let i = 0; i < frames; i++) { g.water = 100; Core.step(g, DT); g.events.forEach((e) => { if (e.t === 'shoot') times.push(g.t); }); g.events.length = 0; } };
+  Core.input(g, 'fire', true);
+  run(90);                                   // 1.5 秒押しつづける
+  const gaps = times.slice(1).map((t, i) => t - times[i]);
+  assert.ok(gaps[0] > 0.19, `はじめは遅い (${gaps[0].toFixed(3)} 秒)`);
+  assert.ok(gaps[gaps.length - 1] < 0.075, `さいごは速い (${gaps[gaps.length - 1].toFixed(3)} 秒)`);
+  assert.ok(gaps.every((x, i) => i === 0 || x <= gaps[i - 1] + 0.02), '間隔はだんだんちぢむ');
+  Core.input(g, 'fire', false); run(20);
+  const n0 = times.length;
+  Core.input(g, 'fire', true); run(40);
+  const again = times.slice(n0);
+  assert.ok(again[1] - again[0] > 0.19, `離すと、また遅いところから (${(again[1] - again[0]).toFixed(3)} 秒)`);
+});
+
+test('スナイパー: 押してから「ため」の 0.4 秒は撃たず、ためきると撃つ。途中で離すとやりなおし', () => {
+  const g = Core.newGame({ seed: 7, noEnemies: true, guns: ['sniper'] });
+  Core.input(g, 'fire', true);
+  let first = null;
+  for (let i = 0; i < 60 && first == null; i++) { Core.step(g, DT); if (g.events.some((e) => e.t === 'shoot')) first = i / 60; }
+  assert.ok(first >= 0.38 && first <= 0.5, `ためてから撃つ (${first} 秒)`);
+  assert.ok(g.events.length >= 0);
+  // 途中で離す
+  const h = Core.newGame({ seed: 7, noEnemies: true, guns: ['sniper'] });
+  Core.input(h, 'fire', true);
+  for (let i = 0; i < 15; i++) Core.step(h, DT);          // 0.25 秒ためる
+  assert.ok(h.p.charge > 0.2, `ためている (${h.p.charge.toFixed(2)})`);
+  Core.input(h, 'fire', false);
+  for (let i = 0; i < 20; i++) Core.step(h, DT);
+  assert.strictEqual(h.shots.length, 0, '離したら撃たない');
+  assert.ok(h.p.charge < 0.05, `ためが消える (${h.p.charge.toFixed(2)})`);
+});
+
+test('ウォーターカッター: 玉は飛ばず、線の上の敵を射程まで全員つらぬく (外れた敵と、射程の外には当たらない)', () => {
+  const g = Core.newGame({ seed: 7, noEnemies: true, guns: ['cutter'] });
+  const mk = (dx, dy) => { const e = Core.spawnEnemy(g, 'suit', g.p.x - dx); e.hp = e.maxhp = 50; e.y = g.world.b[0].roofY + (dy || 0); e.stun = 99; e.x = g.p.x - dx; return e; };
+  const near = mk(120), mid = mk(250), far = mk(560), high = mk(180, -120);
+  Core.input(g, 'fire', true);
+  Core.step(g, DT);
+  assert.strictEqual(g.shots.length, 0, '玉は飛ばない');
+  assert.ok(g.events.some((e) => e.t === 'beam'), 'ビームのイベント');
+  assert.ok(near.hp < 50 && mid.hp < 50, `ならんだ 2 人に、同じコマで当たる (${near.hp}, ${mid.hp})`);
+  assert.strictEqual(far.hp, 50, '射程の外には当たらない');
+  assert.strictEqual(high.hp, 50, '線から高くはずれた敵には当たらない');
+});
+
+test('ビリビリ: しびれが、近くの敵へ連鎖する (遠い敵には走らない)', () => {
+  const g = Core.newGame({ seed: 7, noEnemies: true, guns: ['shock'] });
+  const mk = (dx) => { const e = Core.spawnEnemy(g, 'suit', g.p.x - dx); e.hp = e.maxhp = 50; e.y = g.world.b[0].roofY; e.x = g.p.x - dx; e.stun = 0; return e; };
+  const a = mk(100), b = mk(170), c = mk(235), far = mk(480);
+  [a, b, c, far].forEach((e) => { e.vx = 0; });
+  Core.input(g, 'fire', true);
+  let arcs = 0;
+  for (let i = 0; i < 40; i++) { Core.step(g, DT); arcs += g.events.filter((e) => e.t === 'arc').length; g.events.length = 0; if (arcs) break; }
+  assert.ok(arcs >= 1, `連鎖のイベント (${arcs})`);
+  assert.ok(a.hp < 50 && b.hp < 50, `先頭とそのとなりに当たる (${a.hp}, ${b.hp})`);
+  assert.ok(b.stun > 0 || c.stun > 0, 'となりもしびれる');
+  assert.strictEqual(far.hp, 50, '遠い敵には走らない');
+});
 test('どの水でっぽうも、追ってくる敵に当たる (射程・向き・あわの置き方の確認)', () => {
   for (const gun of Core.GUNS) {
     const g = Core.newGame({ seed: 7, guns: [gun.id], startGun: gun.id });

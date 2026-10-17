@@ -677,7 +677,11 @@
     const sq = pose === 'run' ? 1 + Math.sin(o.phase * 2) * 0.025 : 1;
     c.translate(0, -bob);
     c.rotate(rot);
-    c.scale(pose === 'gadget' ? -1 : 1, sq);
+    if (o.spin) {                                        // バク転 (うしろ向きに回る: マイナス) とロール (前向き: プラス)。体の中心まわりで回す
+      const cy = -h * 0.42;
+      c.translate(0, cy); c.rotate(o.spin); c.translate(0, -cy);
+    }
+    c.scale(pose === 'gadget' ? -1 : 1, sq * (o.squash || 1));
     const recoil = pose === 'gadget' ? (o.shoot || 0) * 2 : 0;   // うつ瞬間に少しのけぞる
     c.drawImage(s.img, -s.ax * w + recoil, -h, w, h);
     c.restore();
@@ -995,6 +999,24 @@
       case 'land':
         for (let i = 0; i < (ev.t === 'land' ? 5 : 3); i++) addFx({ k: 'puff', x: ev.x + (Math.random() - 0.5) * 12, y: ev.y - 2, vx: (Math.random() - 0.6) * 60, vy: -Math.random() * 20, r: 3 + Math.random() * 3, life: 0.35, max: 0.35 });
         break;
+      case 'flip': {
+        const words = ['くるっ!', 'バク転!', 'ひらり!', 'とうっ!'];
+        if (Math.random() < 0.55) addFx({ k: 'text', x: ev.x - 8, y: ev.y - 46, vy: -46, txt: words[Math.floor(Math.random() * words.length)], col: '#fff7c2', life: 0.7, size: 14 });
+        for (let i = 0; i < 5; i++) addFx({ k: 'spark', x: ev.x, y: ev.y, vx: -40 - Math.random() * 120, vy: (Math.random() - 0.5) * 120, life: 0.45, max: 0.45, col: '#fff2a8' });
+        break;
+      }
+      case 'flipTrail':
+        addFx({ k: 'spark', x: ev.x + (Math.random() - 0.5) * 10, y: ev.y + (Math.random() - 0.5) * 10, vx: -30 - Math.random() * 40, vy: 10 + Math.random() * 30, life: 0.4, max: 0.4, col: ['#fff2a8', '#ffb3d6', '#b9ecff'][Math.floor(Math.random() * 3)] });
+        break;
+      case 'flipland':
+        addFx({ k: 'ring', x: ev.x, y: ev.y - 3, r: 5, max: 34, life: 0.3, col: 'rgba(255,247,194,.95)' });
+        for (let i = 0; i < 7; i++) addFx({ k: 'spark', x: ev.x, y: ev.y - 6, vx: (Math.random() - 0.5) * 220, vy: -60 - Math.random() * 140, life: 0.5, max: 0.5, col: ['#fff2a8', '#ffb3d6', '#b9ecff'][i % 3] });
+        for (let i = 0; i < 4; i++) addFx({ k: 'puff', x: ev.x + (Math.random() - 0.5) * 18, y: ev.y - 2, vx: (Math.random() - 0.5) * 100, vy: -Math.random() * 20, r: 3 + Math.random() * 3, life: 0.35, max: 0.35 });
+        if (Math.random() < 0.5) addFx({ k: 'text', x: ev.x, y: ev.y - 54, vy: -40, txt: 'スタッ!', col: '#fff', life: 0.6, size: 13 });
+        break;
+      case 'roll':
+        for (let i = 0; i < 6; i++) addFx({ k: 'puff', x: ev.x - Math.random() * 30, y: ev.y - 2, vx: -40 - Math.random() * 80, vy: -Math.random() * 25, r: 4 + Math.random() * 4, life: 0.45, max: 0.45 });
+        break;
       case 'trip':
         addFx({ k: 'text', x: ev.x, y: ev.y - 52, vy: -40, txt: 'あいた!', col: '#ffd1e0', life: 0.7, size: 14 });
         for (let i = 0; i < 3; i++) drawStarFx(ev.x, ev.y - 46);
@@ -1152,7 +1174,7 @@
     const gun = C.curGun(g);
     drawSpy(c, {
       x: p.x, y: p.y, phase: p.anim, air: !p.onGround, inv: p.inv, stun: p.stun, t: t,
-      carry: p.carry, aim: view.aim || 0, shoot: view.shoot || 0, firing: (view.fireT || 0) > 0, vy: p.vy, gunId: gun.id, gunColor: gun.color
+      carry: p.carry, aim: view.aim || 0, shoot: view.shoot || 0, firing: (view.fireT || 0) > 0, vy: p.vy, spin: view.spin || 0, squash: view.squash || 1, gunId: gun.id, gunColor: gun.color
     });
     if (p.carry) drawProp(c, p.carry, p.x + 3, p.y - 62, Math.sin(t * 10) * 0.06);
     if (gun.windup && p.charge > 0.01) {

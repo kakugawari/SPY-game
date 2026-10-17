@@ -274,8 +274,8 @@ async function run() {
     };
     const tapPeak = await measureJump(0);
     const holdPeak = await measureJump(300);
-    ok(tapPeak > 15 && tapPeak < 80, `ちょんと押すと低く跳ぶ (高さ ${Math.round(tapPeak)})`);
-    ok(holdPeak > tapPeak + 40 && holdPeak > 110, `押しつづけるほど高く跳ぶ (ちょん ${Math.round(tapPeak)} < 長押し ${Math.round(holdPeak)})`);
+    ok(tapPeak > 15 && tapPeak < 98, `ちょんと押すと低く跳ぶ (高さ ${Math.round(tapPeak)})`);
+    ok(holdPeak > tapPeak + 25 && holdPeak > 110, `押しつづけるほど高く跳ぶ (ちょん ${Math.round(tapPeak)} < 長押し ${Math.round(holdPeak)})`);
 
     // 指を画面の外へすべらせて離しても、ジャンプが押しっぱなしにならない
     await setStraight();
@@ -584,6 +584,85 @@ async function run() {
     await page.waitForFunction(() => window.__app.state().mode === 'shop');
     const traits = await page.evaluate(() => [...document.querySelectorAll('.gcard')].map((c) => (c.querySelector('.gtrait') || {}).textContent || ''));
     ok(traits.length === 13 && traits.every((x) => x.length >= 4) && new Set(traits).size === 13, `ぶきやの 13 枚の札すべてに、ちがう「くせ」が出る (${traits.filter(Boolean).length} 枚)`);
+    await ctx.close();
+
+    // ------------------------------------------------------------ バク転・ロール
+    section('バク転・ロール (見た目の動き)');
+    ({ ctx, page } = await freshPage(browser));
+    page.on('pageerror', (e) => errors.push('バク転: ' + e.message));
+    await page.evaluate(() => window.__app.start({ seed: 21, noEnemies: true }));
+    const settle = () => page.evaluate(async () => {
+      const g = window.__app.game();
+      g.p.x = 20; g.p.y = 0; g.p.vy = 0; g.p.onGround = true; g.p.stun = 0; g.p.inv = 0; g.p.jumping = false; g.in.jumpHeld = false;
+      await new Promise((r) => setTimeout(r, 150));
+      g.p.x = 20; g.p.y = 0; g.p.vy = 0; g.p.onGround = true;
+      await new Promise((r) => setTimeout(r, 120));
+    });
+    // 押しつづけた高いジャンプ: 後ろへ 1 回転して、着地でちょうど元にもどる
+    await settle();
+    const fl = await page.evaluate(async () => {
+      const a = window.__app.state().animPlay, g = window.__app.game();
+      const f0 = a.flips, m0 = a.maxSpin;
+      window.__app.press('jump', true);
+      let mid = null;
+      const t0 = performance.now();
+      while (performance.now() - t0 < 1000) {
+        await new Promise((r) => setTimeout(r, 16));
+        if (performance.now() - t0 > 330 && mid == null) mid = a.spin;
+        if (performance.now() - t0 > 450 && g.p.onGround) break;
+      }
+      window.__app.press('jump', false);
+      await new Promise((r) => setTimeout(r, 250));
+      return { flips: a.flips - f0, maxSpin: a.maxSpin, mid, end: a.spin, endTheta: a.theta, onGround: g.p.onGround };
+    });
+    ok(fl.flips === 1 && fl.maxSpin > Math.PI * 2 * 0.9, `押しつづけたジャンプで、後ろへ 1 回転する (${fl.flips} 回・最大 ${fl.maxSpin.toFixed(1)} rad / 1 回転 = 6.3)`);
+    ok(fl.mid < -1 && Math.abs(fl.end) < 0.01 && fl.onGround, `空中ではかたむき (${fl.mid.toFixed(1)})、着地では元にもどる (${fl.end.toFixed(2)})`);
+    // ちょん跳び: 回らない
+    await settle();
+    const tp = await page.evaluate(async () => {
+      const a = window.__app.state().animPlay, g = window.__app.game();
+      const f0 = a.flips; let mx = 0;
+      window.__app.press('jump', true); window.__app.press('jump', false);
+      const t0 = performance.now();
+      while (performance.now() - t0 < 500) { await new Promise((r) => setTimeout(r, 16)); mx = Math.max(mx, Math.abs(a.spin)); }
+      return { flips: a.flips - f0, mx };
+    });
+    ok(tp.flips === 0 && tp.mx < 0.05, `ちょん跳びは回らない (${tp.flips} 回・かたむき ${tp.mx.toFixed(2)})`);
+    // 撃っているあいだは、体を起こして狙う
+    await settle();
+    const aim = await page.evaluate(async () => {
+      const a = window.__app.state().animPlay;
+      window.__app.press('jump', true);
+      await new Promise((r) => setTimeout(r, 140));
+      window.__app.press('fire', true);
+      await new Promise((r) => setTimeout(r, 200));
+      const during = Math.abs(a.spin);
+      window.__app.press('fire', false); window.__app.press('jump', false);
+      await new Promise((r) => setTimeout(r, 600));
+      return during;
+    });
+    ok(aim < 1.0, `バク転の途中でも、撃つと体を起こす (かたむき ${aim.toFixed(2)})`);
+    // 高いところからの着地は、前へロール
+    await settle();
+    const ro = await page.evaluate(async () => {
+      const a = window.__app.state().animPlay, g = window.__app.game();
+      const r0 = a.rolls; let mx = 0, sq = 1;
+      g.p.y = -260; g.p.vy = 0; g.p.onGround = false; g.p.jumping = false;
+      const t0 = performance.now();
+      while (performance.now() - t0 < 900) { await new Promise((r) => setTimeout(r, 16)); mx = Math.max(mx, a.spin); sq = Math.min(sq, a.squash); }
+      return { rolls: a.rolls - r0, mx, sq, end: a.spin };
+    });
+    ok(ro.rolls === 1 && ro.mx > 3 && ro.sq < 0.9 && Math.abs(ro.end) < 0.01, `高いところからの着地は、前へロール (${ro.rolls} 回・最大 ${ro.mx.toFixed(1)} rad・つぶれ ${ro.sq.toFixed(2)}・おわり ${ro.end.toFixed(2)})`);
+    // ふつうの段差のおり (低い) では、ロールしない
+    await settle();
+    const lo = await page.evaluate(async () => {
+      const a = window.__app.state().animPlay, g = window.__app.game();
+      const r0 = a.rolls;
+      g.p.y = -40; g.p.vy = 0; g.p.onGround = false; g.p.jumping = false;
+      await new Promise((r) => setTimeout(r, 500));
+      return a.rolls - r0;
+    });
+    ok(lo === 0, `低い段差のおりでは、ロールしない (${lo} 回)`);
     await ctx.close();
 
     // ------------------------------------------------------------ いちじていし

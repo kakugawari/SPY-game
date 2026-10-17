@@ -130,6 +130,9 @@
         case 'dry': tone(200, 160, 0.08, 'square', 0.08); break;
         case 'defeat': [440, 554, 659, 880].forEach((f, i) => tone(f, f, 0.1, 'square', 0.09, i * 0.06)); break;
         case 'stage': [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, f, 0.16, 'triangle', 0.17, i * 0.07)); break;
+        case 'flip': tone(380, 980, 0.28, 'triangle', 0.1); noise(0.22, 0.14, 1800, 0.5); break;
+        case 'flipland': tone(700, 1500, 0.09, 'triangle', 0.12); tone(1500, 2000, 0.1, 'sine', 0.07, 0.07); break;
+        case 'roll': noise(0.18, 0.2, 700, 0.5); tone(260, 150, 0.12, 'sine', 0.1); break;
         case 'ui': tone(700, 900, 0.07, 'triangle', 0.12); break;
         case 'buy': [660, 880, 1100].forEach((f, i) => tone(f, f, 0.1, 'triangle', 0.15, i * 0.07)); break;
         case 'land': break;
@@ -158,6 +161,9 @@
         case 'dry': play('dry'); break;
         case 'defeat': play('defeat'); break;
         case 'stage': play('stage'); break;
+        case 'flip': play('flip'); break;
+        case 'flipland': play('flipland'); break;
+        case 'roll': play('roll'); break;
         default: break;
       }
     }
@@ -182,6 +188,8 @@
     demoBot: { until: null, wait: 0, air: false, delay: 0 },
     acc: 0,
     over: false, overT: 0,
+    animPlay: null,            // 空中の動き (バク転・ロール)。見た目だけで、ゲームの動きには関わらない
+    animDemo: null,
     camPlay: { x: 0, y: 0, ref: 0 },
     camDemo: { x: 0, y: 0, ref: 0 },
     view: { w: VIEW_W, h: 700, camX: 0, camY: 0, t: 0, aim: 0, shoot: 0 },
@@ -235,6 +243,7 @@
       app.demo = C.newGame({ seed: (Math.random() * 4294967296) >>> 0, noEnemies: true });
       app.demoBot = { until: null, wait: 0, air: false, delay: 0 };
       snapCamera(app.demo, app.camDemo);
+      app.animDemo = null;
     }
   }
 
@@ -261,6 +270,7 @@
     Snd.unlock();
     opts = opts || {};
     const owned = save.owned.slice().sort((a, b) => C.GUNS.indexOf(C.GUN_BY_ID[a]) - C.GUNS.indexOf(C.GUN_BY_ID[b]));
+    app.animPlay = null;
     app.g = C.newGame({ seed: opts.seed, guns: owned, startGun: save.equipped, bombs: 3, noEnemies: !!opts.noEnemies });
     app.acc = 0;
     app.over = false; app.overT = 0;
@@ -541,6 +551,57 @@
   }
 
   // ------------------------------------------------------------ 1 コマ
+  // ------------------------------------------------------------ 空中の動き (見た目だけ。ゲームの動きには関わらない)
+  // バク転: 押しつづけた高いジャンプ (0.1 秒たっても、まだ強く上へ向かっている) で、空中で後ろへ 1 回転。
+  //   着地までに回りきらなくても、着地でさっと 1 回転ぶんまで合わせる。ちょん跳びは回らない
+  // ロール: 高いところから飛びおりた着地 (落ちる速さ 1000 以上) で、前へ 1 回転。
+  const TURN = Math.PI * 2;
+  function newAnim() {
+    return { prevGround: true, air: 0, flipOn: false, w: 0, theta: 0, maxVy: 0, ease: 0, easeFrom: 0, rollT: -1, blend: 1, trailT: 0, flips: 0, rolls: 0, maxSpin: 0, spin: 0, squash: 1 };
+  }
+
+  function updateAnim(g, a, d, firing, quiet) {
+    const p = g.p, grounded = p.onGround;
+    const say = (type) => { const ev = { t: type, x: p.x, y: p.y - 26 }; A.handleEvent(ev); if (!quiet) Snd.event(ev); };
+    if (!grounded) {
+      if (a.prevGround) { a.air = 0; a.flipOn = false; a.theta = 0; a.ease = 0; a.maxVy = 0; }
+      a.air += d;
+      if (p.vy > a.maxVy) a.maxVy = p.vy;
+      if (!a.flipOn && a.theta === 0 && a.air >= 0.1 && a.air < 0.2 && p.vy < -480 && p.jumping && !p.carry && p.stun <= 0) {
+        a.flipOn = true; a.w = TURN / 0.54; a.flips++; say('flip');
+      }
+      if (a.flipOn) {
+        a.theta = Math.max(-TURN, a.theta - a.w * d);
+        a.trailT -= d;
+        if (a.trailT <= 0) { a.trailT = 0.03; A.handleEvent({ t: 'flipTrail', x: p.x, y: p.y - 26 }); }
+      }
+    } else if (!a.prevGround) {
+      if (a.flipOn) { a.flipOn = false; a.easeFrom = a.theta; a.ease = 0.0001; say('flipland'); }
+      else if (a.maxVy > 1000 && p.stun <= 0) { a.rollT = 0; a.rolls++; say('roll'); }
+    }
+    if (a.ease > 0) {
+      a.ease += d;
+      const u = Math.min(1, a.ease / 0.1);
+      a.theta = a.easeFrom + (-TURN - a.easeFrom) * u;
+      if (u >= 1) { a.ease = 0; a.theta = 0; }
+    } else if (grounded && !a.flipOn) {
+      a.theta = 0;
+    }
+    let roll = 0, squash = 1;
+    if (a.rollT >= 0) {
+      a.rollT += d / 0.34;
+      const u = Math.min(1, a.rollT);
+      roll = TURN * (u * u * (3 - 2 * u));
+      squash = 1 - 0.18 * Math.sin(Math.PI * u);
+      if (a.rollT >= 1) a.rollT = -1;
+    }
+    a.blend += ((firing ? 0 : 1) - a.blend) * Math.min(1, d * 14);     // 撃つあいだは体を起こして狙う
+    a.spin = (a.theta + roll) * a.blend;
+    a.squash = squash;
+    a.maxSpin = Math.max(a.maxSpin, Math.abs(a.theta));
+    a.prevGround = grounded;
+  }
+
   function nearestChaser(g) {
     const p = g.p;
     let best = null, bd = 520;
@@ -653,6 +714,13 @@
     app.shake = Math.max(0, app.shake - d);
     const v = app.view;
     v.t = app.time;
+    {
+      const demoMode = app.mode === 'title' || app.mode === 'shop';
+      const key = demoMode ? 'animDemo' : 'animPlay';
+      if (!app[key]) app[key] = newAnim();
+      if (demoMode || (app.mode === 'play' && !app.over)) updateAnim(g, app[key], d, !demoMode && v.fireT > 0, demoMode);
+      v.spin = app[key].spin; v.squash = app[key].squash;
+    }
     const stg = C.stageOf(g.p.x);
     if (v.stage !== stg) { v.stage = stg; v.theme = A.themeOf(stg); }
     v.facade = (v.facade || 0) + ((C.isGroundStage(stg) ? 1 : 0) - (v.facade || 0)) * Math.min(1, d * 4);

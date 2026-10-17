@@ -54,6 +54,12 @@ test('谷の幅は、どの高さの差でも跳んで渡れる余裕がある (
       const gap = b.x - (pv.x + pv.w);
       const dy = b.roofY - pv.roofY;
       const sp = Core.speedAt(pv.x + pv.w);
+      if (pv.ground && b.ground) {
+        assert.strictEqual(gap, 0, '地上の道は谷なしでつづく');
+        assert.strictEqual(dy, 0, '地上の道は同じ高さ');
+        n++;
+        continue;
+      }
       assert.ok(gap >= 50, `谷が狭すぎる ${gap}`);
       assert.ok(gap <= Core.reach(sp, dy) - 37, `seed ${seed} の ${i} 番目: 谷 ${gap} が届く距離 ${Core.reach(sp, dy)} に対して広い`);
       assert.ok(dy >= -80 && dy <= 90, `段差 ${dy}`);
@@ -97,6 +103,7 @@ test('じゃま物は互いに 170px 以上はなれ、谷のきわには置か�
     const w = Core.createWorld(seed);
     Core.ensure(w, 30000);
     for (const b of w.b) {
+      if (b.ground) continue;            // 地上の道は、下の別のテストで見る
       for (const L of [b.roof, b.room]) {
         const xs = L.obs.map((o) => o.x).sort((a, c) => a - c);
         for (let i = 1; i < xs.length; i++) assert.ok(xs[i] - xs[i - 1] >= 170, '近すぎ');
@@ -435,4 +442,109 @@ test('ステージを 5 つ続けて走っても、止まらず、1 つずつ進
     assert.strictEqual(g.over, null, `seed ${seed}: ${g.over}`);
     assert.deepStrictEqual(seen, [2, 3, 4, 5, 6], `seed ${seed}: ${seen}`);
   }
+});
+
+test('地上ステージ: 4 ステージに 1 回 (2, 6, 10 ...)。そのステージの道は谷なしでつづき、ステージの終わりで終わる', () => {
+  assert.deepStrictEqual([1, 2, 3, 4, 5, 6, 7, 8, 9, 10].filter(Core.isGroundStage), [2, 6, 10]);
+  let streets = 0;
+  for (let seed = 1; seed <= 20; seed++) {
+    const w = Core.createWorld(seed);
+    Core.ensure(w, Core.STAGE_PX * 12);
+    for (let i = 0; i < w.b.length; i++) {
+      const b = w.b[i];
+      const st = Core.stageOf(b.x);
+      if (b.ground) {
+        streets++;
+        assert.ok(Core.isGroundStage(st), `seed ${seed}: 地上の道が地上ステージ以外にある (stage ${st})`);
+        assert.ok(b.x + b.w <= Core.stageOf(b.x) * Core.STAGE_PX + 1, '道が次のステージへはみ出す');
+        assert.ok(!b.door, '地上にドアは無い');
+      } else if (Core.isGroundStage(st) && Core.stageOf(b.x) * Core.STAGE_PX - b.x >= 300) {
+        assert.fail(`seed ${seed}: 地上ステージなのに屋上のビル (x=${b.x})`);
+      }
+    }
+    // ステージ 2 の道は、入り口から終わりまで 1 本につながっている
+    const ids = w.b.filter((b) => b.ground && Core.stageOf(b.x) === 2);
+    assert.ok(ids.length >= 2, `seed ${seed}: 道の区画 ${ids.length}`);
+    for (let k = 1; k < ids.length; k++) assert.strictEqual(ids[k].x, ids[k - 1].x + ids[k - 1].w, '道が途切れている');
+    assert.strictEqual(ids[ids.length - 1].x + ids[ids.length - 1].w, 2 * Core.STAGE_PX, '道がステージの終わりまでつづく');
+  }
+  assert.ok(streets > 60, `道の区画の数 ${streets}`);
+});
+
+test('地上のじゃま物: 190px 以上はなれる (区画の継ぎ目をまたいでも)。入り口から 95px・出口から 150px あける。車がある', () => {
+  const kinds = new Set();
+  for (let seed = 1; seed <= 40; seed++) {
+    const w = Core.createWorld(seed);
+    Core.ensure(w, Core.STAGE_PX * 12);
+    let last = null;
+    for (const b of w.b) {
+      if (!b.ground) { last = null; continue; }
+      const entering = !(w.b[b.i - 1] && w.b[b.i - 1].ground && w.b[b.i - 1].x + w.b[b.i - 1].w === b.x);
+      const lastSeg = b.x + b.w >= Core.stageOf(b.x) * Core.STAGE_PX - 1;
+      for (const o of b.roof.obs) {
+        kinds.add(o.t);
+        if (last != null) assert.ok(o.x - last >= 190, `seed ${seed}: ${o.x - last}px しかはなれていない`);
+        if (entering && last == null) assert.ok(o.x >= b.x + 95, '入り口に近すぎる');
+        if (lastSeg) assert.ok(o.x <= b.x + b.w - 150, '出口に近すぎる');
+        last = o.x;
+      }
+    }
+  }
+  for (const k of ['car', 'bin', 'hydrant', 'bench', 'cone', 'box']) assert.ok(kinds.has(k), `${k} が出ない`);
+  assert.ok(!kinds.has('vent'), '地上に屋上のダクトは出ない');
+});
+
+test('自動プレイが、地上ステージ (車は押しつづけて跳ぶ) をふくむ 3 ステージを 40 通りで走りきる', () => {
+  for (let seed = 1; seed <= 40; seed++) {
+    const g = Core.newGame({ seed: seed, noEnemies: true });
+    const st = makeBot(seed % 3 === 0 ? 0.06 : 0);
+    let sawStreet = false;
+    for (let i = 0; i < 60 * 150 && !g.over && g.stage < 4; i++) {
+      botStep(g, st, DT); Core.step(g, DT);
+      if (g.stage === 2 && g.p.onGround) sawStreet = true;
+      g.events.length = 0;
+    }
+    assert.strictEqual(g.over, null, `seed ${seed}: ${g.over} (x=${Math.round(g.p.x)})`);
+    assert.ok(g.stage >= 4 && sawStreet, `seed ${seed}: stage ${g.stage}`);
+  }
+});
+
+test('車は、ちょん跳びではつまずき、押しつづけたジャンプで越える', () => {
+  const mk = () => {
+    const g = Core.newGame({ seed: 7, noEnemies: true });
+    const b = g.world.b[0];
+    b.roof.obs.length = 0; b.roof.obs.push({ x: 400, t: 'car' });
+    g.p.x = 300; g.p.y = b.roofY;
+    return g;
+  };
+  // ちょん跳び (押してすぐ離す) を、車の手前でいちばん合う位置に
+  let tripped = 0, passed = 0;
+  for (const d of [30, 40, 50, 60, 70]) {
+    const g = mk(); g.p.x = 400 - d;
+    Core.input(g, 'jump', true); Core.step(g, DT); Core.input(g, 'jump', false);
+    let t = false;
+    for (let i = 0; i < 90; i++) { Core.step(g, DT); if (g.events.some((e) => e.t === 'trip')) t = true; g.events.length = 0; }
+    if (t) tripped++;
+  }
+  assert.ok(tripped >= 4, `ちょん跳びでつまずいた ${tripped}/5`);
+  const g = mk(); const st = makeBot();
+  let t2 = false;
+  for (let i = 0; i < 120; i++) { botStep(g, st, DT); Core.step(g, DT); if (g.events.some((e) => e.t === 'trip')) t2 = true; g.events.length = 0; }
+  assert.ok(!t2 && g.p.x > 520, `押しつづければ越える (x=${Math.round(g.p.x)})`);
+  passed++;
+  assert.ok(passed);
+});
+
+test('stage イベントは地上かどうかを知らせる / 地上ステージは敵が 1 人多い', () => {
+  const g = Core.newGame({ seed: 4, noEnemies: true });
+  const st = makeBot();
+  const evs = [];
+  for (let i = 0; i < 60 * 130 && !g.over && g.stage < 3; i++) { botStep(g, st, DT); Core.step(g, DT); g.events.forEach((e) => { if (e.t === 'stage') evs.push(e); }); g.events.length = 0; }
+  assert.deepStrictEqual(evs.map((e) => [e.n, e.ground]), [[2, true], [3, false]]);
+  const h = Core.newGame({ seed: 4 });
+  h.p.x = 40 * 200 * 1 + 400;
+  const wantAt = (x) => { h.p.x = x; h.enemies.length = 0; h.spawnT = 0; for (let k = 0; k < 30; k++) { h.spawnT = 0; h.p.y = 0; Core.ensure(h.world, x + 4000); const b = Core.buildingAt(h.world, x); if (b) h.p.y = b.roofY; Core.step(h, 0.001); } return h.enemies.filter((e) => e.state === 'chase').length; };
+  const onStreet = wantAt(40 * 398);   // ステージ 2 の終わり (m=398 → 1 + 2 + 地上の 1 = 4)
+  const onRoof = wantAt(40 * 402);     // ステージ 3 の初め (m=402 → 1 + 2 = 3)
+  assert.strictEqual(onStreet, onRoof + 1, `地上 ${onStreet} / 屋上 ${onRoof}`);
 });

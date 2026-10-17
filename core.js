@@ -56,6 +56,9 @@
   /** 200m ごとに 1 ステージ。終わりは無い。 */
   const STAGE_LEN_M = 200;
   function stageOf(x) { return 1 + Math.floor(metersOf(x) / STAGE_LEN_M); }
+  const STAGE_PX = STAGE_LEN_M * 40;
+  /** 4 ステージに 1 回 (2, 6, 10, ...) は地上の追いかけっこ: 谷の無い、ひと続きの道。 */
+  function isGroundStage(stage) { return stage % 4 === 2; }
   function stageClearBonus(stage) { return 10 + 5 * Math.min(stage, 20); }   // 抜けたステージの番号 (1 から)
 
   // ------------------------------------------------------------ 水でっぽう
@@ -118,12 +121,19 @@
   };
   const PROP_KEYS = Object.keys(PROPS);
 
+  // w >= 50 の物 (車) は、ちょん跳びでは越えられず、押しつづけた高いジャンプが要る
   const OBSTACLES = {
-    cone: { w: 16, h: 22 },
-    box:  { w: 28, h: 30 },
-    vent: { w: 34, h: 20 }
+    cone:    { w: 16, h: 22 },
+    box:     { w: 28, h: 30 },
+    vent:    { w: 34, h: 20 },
+    bin:     { w: 22, h: 28 },
+    hydrant: { w: 16, h: 26 },
+    bench:   { w: 40, h: 20 },
+    car:     { w: 64, h: 34 }
   };
   const OBS_KEYS = Object.keys(OBSTACLES);
+  const ROOF_OBS = ['cone', 'box', 'vent'];
+  const GROUND_OBS = ['cone', 'box', 'bin', 'hydrant', 'bench', 'car', 'car'];
 
   // ------------------------------------------------------------ 敵
   const ENEMIES = {
@@ -151,25 +161,39 @@
     const r = world.rng;
     const bs = world.b;
     const i = bs.length;
-    const b = { i: i, x: 0, w: 0, roofY: 0, floorY: 0, door: false, doorX: 0, exitX: 0, style: Math.floor(r() * 5) };
+    const b = { i: i, x: 0, w: 0, roofY: 0, floorY: 0, door: false, doorX: 0, exitX: 0, ground: false, style: Math.floor(r() * 5) };
+    // 地上ステージの道は、ステージの終わりまで谷なしでつづく (1 区画 900〜1400、残りが少なければ残りぜんぶ)
+    const streetWidth = (x) => {
+      const remain = stageOf(x) * STAGE_PX - x;
+      return remain <= 1500 ? remain : Math.round(900 + r() * 500);
+    };
     if (i === 0) {
       b.x = -320; b.w = 940; b.roofY = 0;
     } else {
       const pv = bs[i - 1];
       const end = pv.x + pv.w;
-      const sp = speedAt(end);
-      let d = Math.round((r() * 2 - 1) * 8) * 10;
-      let ry = pv.roofY + d;
-      if (ry < -260 || ry > 200) { d = -d; ry = pv.roofY + d; }
-      if (ry < -260 || ry > 200) { d = 0; ry = pv.roofY; }
-      let gMax = Math.min(120, reach(sp, d) - 38);
-      if (gMax < 50) { d = 0; ry = pv.roofY; gMax = Math.min(120, reach(sp, 0) - 38); }
-      const gap = Math.round(50 + r() * (gMax - 50));
-      b.x = end + gap;
-      b.roofY = ry;
-      b.w = Math.round(200 + r() * 360);
-      if (i === 2) b.w = 480;
-      if (b.w >= 420 && (r() < 0.75 || i === 2)) b.door = true;
+      if (pv.ground && isGroundStage(stageOf(end))) {
+        // 道のつづき: 谷なし・同じ高さ
+        b.ground = true; b.x = end; b.roofY = pv.roofY; b.w = streetWidth(end);
+      } else {
+        const sp = speedAt(end);
+        let d = Math.round((r() * 2 - 1) * 8) * 10;
+        let ry = pv.roofY + d;
+        if (ry < -260 || ry > 200) { d = -d; ry = pv.roofY + d; }
+        if (ry < -260 || ry > 200) { d = 0; ry = pv.roofY; }
+        let gMax = Math.min(120, reach(sp, d) - 38);
+        if (gMax < 50) { d = 0; ry = pv.roofY; gMax = Math.min(120, reach(sp, 0) - 38); }
+        const gap = Math.round(50 + r() * (gMax - 50));
+        b.x = end + gap;
+        b.roofY = ry;
+        if (isGroundStage(stageOf(b.x)) && stageOf(b.x) * STAGE_PX - b.x >= 300) {
+          b.ground = true; b.w = streetWidth(b.x);      // 地上ステージの入り口 (谷を跳んで道へ)
+        } else {
+          b.w = Math.round(200 + r() * 360);
+          if (i === 2) b.w = 480;
+          if (b.w >= 420 && (r() < 0.75 || i === 2)) b.door = true;
+        }
+      }
     }
     b.floorY = b.roofY + FLOOR_OFF;
     if (b.door) {
@@ -181,7 +205,74 @@
     return b;
   }
 
+  /** 地上の道の中身: じゃま物 (車・ゴミ箱・消火栓・ベンチ・コーン・箱) が 190〜330px おきにならぶ。 */
+  function populateGround(world, b, prev, r) {
+    b.roof = { items: [], props: [], obs: [] };
+    b.room = { items: [], props: [], obs: [] };
+    const far = (x, arr, d) => arr.every((o) => Math.abs(o.x - x) >= d);
+    const entering = !prev || !prev.ground || b.x > prev.x + prev.w;
+    const sEnd = stageOf(b.x) * STAGE_PX;
+    const lastSeg = b.x + b.w >= sEnd - 1;
+    let lo = entering ? b.x + 95 : b.x + 20;
+    if (!entering && world.lastGroundObsX != null) lo = Math.max(lo, world.lastGroundObsX + 190);
+    const hi = lastSeg ? b.x + b.w - 150 : b.x + b.w - 20;
+    let x = lo + r() * 60;
+    while (x <= hi) {
+      const t = pick(r, GROUND_OBS);
+      b.roof.obs.push({ x: Math.round(x), t: t });
+      world.lastGroundObsX = Math.round(x);
+      x += 190 + r() * 140;
+    }
+    // 投げられる物
+    const nProps = Math.floor(b.w / 330);
+    for (let k = 0; k < nProps; k++) {
+      for (let tries = 0; tries < 8; tries++) {
+        const px = Math.round(b.x + 50 + r() * Math.max(10, b.w - 120));
+        if (!far(px, b.roof.obs, 50) || !far(px, b.roof.props, 60)) continue;
+        b.roof.props.push({ x: px, t: pick(r, PROP_KEYS) });
+        break;
+      }
+    }
+    // 特別なアイテム (600px につき半分の確率)
+    for (let k = 0; k < Math.floor(b.w / 600); k++) {
+      if (r() < 0.55) {
+        for (let tries = 0; tries < 8; tries++) {
+          const px = Math.round(b.x + 60 + r() * Math.max(10, b.w - 140));
+          if (!far(px, b.roof.obs, 45) || !far(px, b.roof.props, 30) || !far(px, b.roof.items, 30)) continue;
+          b.roof.items.push({ x: px, y: b.roofY - 24, t: pickSpecial(r) });
+          break;
+        }
+      }
+    }
+    // コインの列 (じゃま物の上は高く = 跳べという合図)
+    const nLines = Math.max(1, Math.floor(b.w / 260));
+    for (let k = 0; k < nLines; k++) {
+      if (r() < 0.65) {
+        const n = 4 + Math.floor(r() * 3);
+        const x0 = b.x + 40 + r() * Math.max(10, b.w - 80 - n * 30);
+        for (let q = 0; q < n; q++) {
+          const cx = Math.round(x0 + q * 30);
+          if (cx > b.x + b.w - 20) break;
+          const over = b.roof.obs.some((o) => Math.abs(o.x - cx) < 40);
+          if (b.roof.items.some((it) => Math.abs(it.x - cx) < 22)) continue;
+          b.roof.items.push({ x: cx, y: b.roofY - (over ? 70 : 26), t: 'coin' });
+        }
+      }
+    }
+    // 手前の谷にかかるコインの弧 (入り口だけ)
+    if (prev && entering) {
+      const end = prev.x + prev.w;
+      for (let k = 0; k < 5; k++) {
+        const u = k / 4;
+        const cx = Math.round(end - 14 + u * (b.x - end + 28));
+        const base = prev.roofY + (b.roofY - prev.roofY) * u;
+        b.roof.items.push({ x: cx, y: Math.round(base - 34 - 70 * Math.sin(Math.PI * u)), t: 'coin' });
+      }
+    }
+  }
+
   function populate(world, b, prev, r) {
+    if (b.ground) { populateGround(world, b, prev, r); return; }
     const i = b.i;
     b.roof = { items: [], props: [], obs: [] };
     b.room = { items: [], props: [], obs: [] };
@@ -197,7 +288,7 @@
         const x = Math.round(lo + r() * (hi - lo));
         if (!far(x, b.roof.obs, 170)) continue;
         if (b.door && Math.abs(x - b.doorX) < 80) continue;
-        b.roof.obs.push({ x: x, t: pick(r, OBS_KEYS) });
+        b.roof.obs.push({ x: x, t: pick(r, ROOF_OBS) });
         break;
       }
     }
@@ -256,7 +347,7 @@
         for (let tries = 0; tries < 8; tries++) {
           const x = Math.round(a + r() * (z - a));
           if (!far(x, b.room.obs, 170)) continue;
-          b.room.obs.push({ x: x, t: pick(r, OBS_KEYS) });
+          b.room.obs.push({ x: x, t: pick(r, ROOF_OBS) });
           break;
         }
       }
@@ -496,7 +587,7 @@
     if (g.noEnemies) return;
     const p = g.p;
     const m = metersOf(p.x);
-    const want = Math.min(5, 1 + Math.floor(m / 180));
+    const want = Math.min(5, 1 + Math.floor(m / 180) + (isGroundStage(stageOf(p.x)) ? 1 : 0));   // 地上は逃げ場が少ないので 1 人多い
     const active = chasers(g).length;
     g.spawnT -= dt;
     if (active < want && g.spawnT <= 0) {
@@ -532,7 +623,8 @@
     const list = o.inside >= 0 ? w.b[o.inside].room.obs : nearbyObs(g, o.x);
     for (const ob of list) {
       const d = ob.x - o.x;
-      if (d > -4 && d < speed * 0.18) return { until: o.x };   // ちょん跳び: すぐ離す
+      const wide = OBSTACLES[ob.t].w >= 50;                     // 車: 押しつづけた高いジャンプで、まんなかを過ぎたら離す
+      if (d > -4 && d < speed * (wide ? 0.3 : 0.18)) return { until: wide ? ob.x + 14 : o.x };   // ふつうはちょん跳び: すぐ離す
     }
     return null;
   }
@@ -1078,7 +1170,7 @@
       g.coins += bonus;
       g.water = 100;
       g.bombs = Math.min(9, g.bombs + 1);
-      emit(g, 'stage', p.x, p.y, { n: st, bonus: bonus });
+      emit(g, 'stage', p.x, p.y, { n: st, bonus: bonus, ground: isGroundStage(st) });
     }
 
     collect(g);
@@ -1141,7 +1233,7 @@
     // 乱数
     mulberry32: mulberry32, shuffle: shuffle,
     // 世界
-    speedAt: speedAt, metersOf: metersOf, stageOf: stageOf, stageClearBonus: stageClearBonus, STAGE_LEN_M: STAGE_LEN_M, reach: reach,
+    speedAt: speedAt, metersOf: metersOf, stageOf: stageOf, isGroundStage: isGroundStage, STAGE_PX: STAGE_PX, stageClearBonus: stageClearBonus, STAGE_LEN_M: STAGE_LEN_M, reach: reach,
     createWorld: createWorld, ensure: ensure, buildingAt: buildingAt, indexNear: indexNear,
     layerOf: layerOf, baseY: baseY, groundAt: groundAt,
     // 遊び

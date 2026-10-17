@@ -404,6 +404,30 @@ async function run() {
     await page.waitForTimeout(1500);
     const stg2 = await page.evaluate(() => ({ t: document.getElementById('hStage').textContent, bg: getComputedStyle(document.getElementById('stage')).backgroundImage, op: getComputedStyle(document.getElementById('sky2')).opacity }));
     ok(stg2.t === 'ステージ 2' && stg2.bg !== stg0.bg && stg2.op === '0', `空の色がステージ 2 のものに変わる (${stg2.bg.slice(16, 46)})`);
+    // 地上ステージ (ステージ 2): 谷の無い道を走り、街並みが出て、終わると屋上へもどる
+    await page.waitForFunction(() => { const g = window.__app.game(), b = window.Core.buildingAt(g.world, g.p.x); return b && b.ground && g.p.onGround; }, null, { timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(800);
+    const street = await page.evaluate(() => {
+      const g = window.__app.game(), a = window.__app.state(), b = window.Core.buildingAt(g.world, g.p.x);
+      return { ground: !!(b && b.ground), facade: a.view.facade, stage: g.stage, over: g.over, gaps: g.world.b.filter((q, i) => i > 0 && q.ground && g.world.b[i - 1].ground && q.x !== g.world.b[i - 1].x + g.world.b[i - 1].w).length };
+    });
+    ok(street.ground && !street.over, `ステージ 2 は地上の道を走る (over=${street.over})`);
+    ok(street.facade > 0.9, `地上ステージでは、背景に街並みが出る (${street.facade.toFixed(2)})`);
+    ok(street.gaps === 0, `道の区画のあいだに谷が無い (つなぎ目のずれ ${street.gaps})`);
+    await page.evaluate(() => {
+      window.__auto = false;
+      const g = window.__app.game();
+      const endX = 2 * window.Core.STAGE_PX;
+      window.Core.ensure(g.world, endX + 4000);
+      const b = window.Core.buildingAt(g.world, endX - 700);
+      g.p.x = endX - 700; g.p.y = b.roofY; g.p.vy = 0; g.p.onGround = true; g.p.stun = 0; g.p.inv = 0; g.enemies.length = 0; g.spawnT = 999;
+      window.__bot.until = null; window.__bot.air = false; window.__auto = true;
+    });
+    await page.waitForFunction(() => window.__app.game().stage === 3, null, { timeout: 8000 }).catch(() => {});
+    await page.waitForTimeout(2500);
+    const back = await page.evaluate(() => { const g = window.__app.game(), b = window.Core.buildingAt(g.world, g.p.x); return { stage: g.stage, over: g.over, facade: window.__app.state().view.facade, roof: !!(b && !b.ground), text: document.getElementById('hStage').textContent }; });
+    ok(back.stage === 3 && !back.over && back.roof, `道のおわりで次のステージ (屋上) へ移れる (stage ${back.stage}, over=${back.over})`);
+    ok(back.facade < 0.1, `屋上にもどると街並みは消える (${back.facade.toFixed(2)})`);
     // ずっと先 (ステージ 40 ほど) でも、ふつうに遊べる
     await page.evaluate(() => {
       window.__auto = false;

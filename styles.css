@@ -131,7 +131,7 @@ button { font: inherit; color: inherit; touch-action: manipulation; }
 @keyframes blink { 50% { transform: scale(1.18); } }
 
 #toast {
-  position: absolute; left: 50%; top: 92px; transform: translateX(-50%); width: max-content; max-width: 380px;
+  position: absolute; left: 50%; top: 128px; transform: translateX(-50%); width: max-content; max-width: 380px;
   padding: 9px 16px; border-radius: 999px; text-align: center; font-weight: 800; font-size: 15px; line-height: 1.35;
   background: rgba(255,248,252,.96); color: var(--ink); box-shadow: 0 3px 0 rgba(42,33,96,.45);
   opacity: 0; transition: opacity .18s;

@@ -488,9 +488,9 @@
     }, 1250);
   }
 
-  function showStageBanner(n, bonus) {
+  function showStageBanner(n, bonus, ground) {
     els.sbName.textContent = 'ステージ ' + n;
-    els.sbSub.textContent = 'ステージクリア! +' + bonus + 'コイン ・ 水まんたん';
+    els.sbSub.textContent = ground ? 'ちじょうの おいかけっこ! 車は長おしでジャンプ' : 'ステージクリア! +' + bonus + 'コイン ・ 水まんたん';
     els.banner.animate([
       { opacity: 0, transform: 'translateX(-50%) scale(.6)' },
       { opacity: 1, transform: 'translateX(-50%) scale(1.08)', offset: 0.18 },
@@ -513,7 +513,7 @@
     if (p.onGround || p.y > cam.ref + 140) {
       cam.ref += (p.y - cam.ref) * Math.min(1, dt * 5);
     }
-    const target = cam.ref - app.view.h * 0.6;
+    const target = cam.ref - app.view.h * (0.6 + 0.1 * (app.view.facade || 0));   // 地上ステージは、道を少し下に見せて街並みを広く
     cam.y += (target - cam.y) * Math.min(1, dt * 6);
   }
 
@@ -550,7 +550,7 @@
         case 'dry': toast('水ぎれ! タンク💧をひろおう', 1400); break;
         case 'nope': if (g.bombs <= 0) toast('水ばくだんが ないよ', 1200); break;
         case 'trip': app.shake = Math.max(app.shake, 0.15); break;
-        case 'stage': showStageBanner(ev.n, ev.bonus); applySky(ev.n, false); break;
+        case 'stage': showStageBanner(ev.n, ev.bonus, ev.ground); applySky(ev.n, false); if (ev.ground) tip('ground', 'ちじょうは谷が無いよ。車は長おしの高いジャンプ!'); break;
         default: break;
       }
     }
@@ -632,6 +632,8 @@
     v.t = app.time;
     const stg = C.stageOf(g.p.x);
     if (v.stage !== stg) { v.stage = stg; v.theme = A.themeOf(stg); }
+    v.facade = (v.facade || 0) + ((C.isGroundStage(stg) ? 1 : 0) - (v.facade || 0)) * Math.min(1, d * 4);
+    v.groundY = cam.ref;
     if (app.mode === 'title' || app.mode === 'shop') { if (app.skyStage !== stg) applySky(stg, false); }
     const sx = app.shake > 0 ? (Math.random() - 0.5) * app.shake * 18 : 0;
     const sy = app.shake > 0 ? (Math.random() - 0.5) * app.shake * 18 : 0;

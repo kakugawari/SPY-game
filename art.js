@@ -132,6 +132,36 @@
       c.fill();
     }
 
+    // 地上ステージの街並み (店・窓・ひさし)。高さはいまの道の高さに合わせる
+    if ((view.facade || 0) > 0.01) {
+      const base = (view.groundY != null ? view.groundY : 0) - view.camY;
+      const cell = 120, off = view.camX * 0.5;
+      const i0 = Math.floor(off / cell) - 1, n = Math.ceil(w / cell) + 3;
+      c.save(); c.globalAlpha = Math.min(1, view.facade);
+      for (let i = i0; i < i0 + n; i++) {
+        const bh = 220 + hash(i, 31) * 190, bw = cell - 8, x = i * cell - off;
+        const pal = buildPal(th, Math.floor(hash(i, 32) * 5));
+        c.fillStyle = pal.body; c.fillRect(x, base - bh, bw, bh);
+        c.fillStyle = pal.top; c.fillRect(x - 2, base - bh - 4, bw + 4, 8);
+        for (let r2 = 0; r2 * 44 + 30 < bh - 70; r2++) {
+          for (let k = 0; k < 3; k++) {
+            const lit = hash(i, r2, k + 40) > 0.45;
+            c.fillStyle = lit ? '#ffe6a0' : (th.night ? '#2b2a58' : '#3c4476');
+            rr(c, x + 12 + k * 32, base - bh + 22 + r2 * 44, 20, 26, 3); c.fill();
+          }
+        }
+        // 1 階の店: ひさしと入り口
+        const awn = ['#ff6b6b', '#4cc9f0', '#ffd166', '#7bd88f', '#c77dff'][Math.floor(hash(i, 33) * 5)];
+        c.fillStyle = awn;
+        for (let k = 0; k < 6; k++) { if (k % 2 === 0) c.fillRect(x + 6 + k * 16, base - 58, 16, 12); }
+        c.fillStyle = 'rgba(255,255,255,.88)';
+        for (let k = 0; k < 6; k++) { if (k % 2 === 1) c.fillRect(x + 6 + k * 16, base - 58, 16, 12); }
+        c.fillStyle = th.night ? '#ffe9a8' : '#cfeaff'; rr(c, x + 10, base - 42, 38, 32, 3); c.fill();
+        c.fillStyle = '#5b3f86'; rr(c, x + 60, base - 44, 24, 44, 4); c.fill();
+      }
+      c.restore();
+    }
+
     // 遠くの街
     const layers = [
       { par: 0.12, col: th.far[0], cell: 78, base: 0.86, hmin: 90, hmax: 240 },
@@ -155,7 +185,69 @@
   }
 
   // ------------------------------------------------------------ ビル
+  /** 地上の道: 歩道・道路・中央線・横断歩道・街灯。区画の継ぎ目は見えない (同じ絵がつづく)。 */
+  function drawStreet(c, g, b, view, t) {
+    const th = themeOf(C.stageOf(b.x));
+    const x = b.x, w = b.w, top = b.roofY;
+    const bottom = view.camY + view.h + 40;
+    const x0 = Math.max(x, view.camX - 40), x1 = Math.min(x + w, view.camX + view.w + 40);
+    if (x1 <= x0) return;
+    const night = th.night;
+    c.fillStyle = night ? '#6a678c' : '#aaa5c6'; c.fillRect(x, top, w, 14);                 // 歩道
+    c.fillStyle = 'rgba(255,255,255,.3)'; c.fillRect(x, top, w, 3);
+    c.fillStyle = night ? '#2c294a' : '#4b4868'; c.fillRect(x, top + 14, w, bottom - top);   // 道路
+    c.fillStyle = 'rgba(0,0,0,.18)'; c.fillRect(x, top + 14, w, 5);
+    // 中央線 (点線)
+    c.fillStyle = night ? '#d9c36a' : '#ffe27a';
+    for (let xx = Math.floor(x0 / 70) * 70; xx < x1; xx += 70) c.fillRect(xx, top + 78, 36, 5);
+    // 横断歩道 (1000px ごとに 1 つ)
+    for (let xx = Math.floor(x0 / 1000) * 1000 + 520; xx < x1 + 120; xx += 1000) {
+      if (xx + 90 < x0 || xx > x1) continue;
+      c.fillStyle = 'rgba(255,255,255,.75)';
+      for (let k = 0; k < 6; k++) c.fillRect(xx + k * 16, top + 24, 9, 110);
+    }
+    // 道路を走る車 (飾り。じゃま物ではない。区画のはしで切って、継ぎ目でも同じ位置に見えるようにする)
+    c.save();
+    c.beginPath(); c.rect(x, top + 14, w, 200); c.clip();
+    const P = 1500;
+    for (let lane = 0; lane < 2; lane++) {
+      const dir = lane === 0 ? -1 : 1, v = lane === 0 ? 150 : 110, base = top + (lane === 0 ? 70 : 128);
+      for (let m = Math.floor((x0 - 150) / P) - 1; m <= Math.ceil((x1 + 150) / P); m++) {
+        for (let j = 0; j < 2; j++) {
+          const seed = hash(j, lane, 7);
+          const px = m * P + (((seed * P + dir * t * v * (0.8 + seed * 0.5)) % P) + P) % P;
+          if (px < x0 - 80 || px > x1 + 80) continue;
+          const col = ['#d96a6a', '#5aa9c9', '#d9b85a', '#68b87a', '#a874d0'][Math.floor(hash(m, j, lane) * 5)];
+          c.save(); c.translate(px, base); c.scale(dir * 0.9, 0.9);
+          c.fillStyle = 'rgba(0,0,0,.2)'; c.beginPath(); c.ellipse(0, 0, 33, 3, 0, 0, TAU); c.fill();
+          c.fillStyle = col; rr(c, -32, -20, 64, 17, 6); c.fill();
+          c.beginPath(); c.moveTo(-20, -20); c.lineTo(-13, -33); c.lineTo(12, -33); c.lineTo(21, -20); c.closePath(); c.fill();
+          c.fillStyle = 'rgba(0,0,0,.28)'; c.fillRect(-31, -12, 62, 8);
+          c.fillStyle = '#cfe6f5'; c.beginPath(); c.moveTo(-16, -21); c.lineTo(-11, -30); c.lineTo(11, -30); c.lineTo(17, -21); c.closePath(); c.fill();
+          circle(c, 29, -12, 2.4, '#fff3a8'); circle(c, -29, -12, 2, '#ff8a8a');
+          circle(c, -18, -4, 6, '#23223a'); circle(c, 18, -4, 6, '#23223a');
+          c.restore();
+        }
+      }
+    }
+    c.restore();
+    // 街灯 (320px ごと。よるはあかりがにじむ)
+    for (let xx = Math.floor(x0 / 320) * 320 + 160; xx < x1 + 20; xx += 320) {
+      if (xx < x0 - 20) continue;
+      c.fillStyle = '#4a4766'; c.fillRect(xx - 2, top - 96, 4, 96);
+      c.fillRect(xx - 2, top - 96, 20, 4);
+      c.fillStyle = night ? '#fff0b0' : '#fff6d0'; rr(c, xx + 10, top - 98, 14, 8, 3); c.fill();
+      if (night) {
+        const gr = c.createRadialGradient(xx + 17, top - 90, 2, xx + 17, top - 50, 70);
+        gr.addColorStop(0, 'rgba(255,240,170,.55)'); gr.addColorStop(1, 'rgba(255,240,170,0)');
+        c.fillStyle = gr; c.fillRect(xx - 60, top - 100, 154, 150);
+      }
+    }
+    void g; void t;
+  }
+
   function drawBuilding(c, g, b, view, t) {
+    if (b.ground) { drawStreet(c, g, b, view, t); return; }
     const pal = buildPal(themeOf(C.stageOf(b.x)), b.style);
     const x = b.x, w = b.w, top = b.roofY;
     const bottom = view.camY + view.h + 40;
@@ -282,6 +374,32 @@
       c.fillStyle = '#b78a5c'; c.fillRect(x - 14, y - O.h, 28, 5);
       c.fillStyle = 'rgba(255,255,255,.55)'; c.fillRect(x - 3, y - O.h, 6, O.h);
       c.fillStyle = '#7a5a3a'; c.font = '700 8px sans-serif'; c.textAlign = 'center'; c.fillText('▼', x + 8, y - 8);
+    } else if (ob.t === 'car') {
+      const col = ['#ff6b6b', '#4cc9f0', '#ffd166', '#7bd88f', '#c77dff'][Math.floor(hash(Math.round(x), 41) * 5)];
+      c.fillStyle = 'rgba(0,0,0,.18)'; c.beginPath(); c.ellipse(x, y, 34, 3.4, 0, 0, TAU); c.fill();
+      c.fillStyle = col; rr(c, x - 32, y - 20, 64, 17, 6); c.fill();                  // 車体
+      c.beginPath(); c.moveTo(x - 20, y - 20); c.lineTo(x - 13, y - 33); c.lineTo(x + 12, y - 33); c.lineTo(x + 21, y - 20); c.closePath(); c.fill();   // 屋根
+      c.fillStyle = 'rgba(255,255,255,.28)'; rr(c, x - 31, y - 19, 62, 5, 3); c.fill();
+      c.fillStyle = '#dff4ff';
+      c.beginPath(); c.moveTo(x - 16, y - 21); c.lineTo(x - 11, y - 30); c.lineTo(x - 1, y - 30); c.lineTo(x - 1, y - 21); c.closePath(); c.fill();
+      c.beginPath(); c.moveTo(x + 2, y - 21); c.lineTo(x + 2, y - 30); c.lineTo(x + 11, y - 30); c.lineTo(x + 17, y - 21); c.closePath(); c.fill();
+      circle(c, x + 29, y - 12, 2.6, '#fff3a8'); circle(c, x - 29, y - 12, 2.2, '#ff8a8a');
+      circle(c, x - 18, y - 4, 6, '#2b2a3a'); circle(c, x + 18, y - 4, 6, '#2b2a3a');
+      circle(c, x - 18, y - 4, 2.4, '#b9b9c9'); circle(c, x + 18, y - 4, 2.4, '#b9b9c9');
+    } else if (ob.t === 'bin') {
+      c.fillStyle = '#6fae8c'; rr(c, x - 9, y - 26, 18, 26, 3); c.fill();
+      c.fillStyle = '#4e8a6b'; rr(c, x - 11, y - 29, 22, 5, 2); c.fill();
+      c.fillStyle = 'rgba(255,255,255,.3)'; c.fillRect(x - 6, y - 22, 3, 18);
+      c.fillStyle = '#4e8a6b'; c.fillRect(x - 9, y - 12, 18, 2);
+    } else if (ob.t === 'hydrant') {
+      c.fillStyle = '#ff5d5d'; rr(c, x - 6, y - 21, 12, 21, 3); c.fill();
+      circle(c, x, y - 22, 6.5, '#ff5d5d');
+      c.fillStyle = '#d63c3c'; c.fillRect(x - 10, y - 14, 20, 5); rr(c, x - 8, y - 4, 16, 4, 1); c.fill();
+      circle(c, x, y - 28, 2.2, '#ffe27a');
+    } else if (ob.t === 'bench') {
+      c.fillStyle = '#b07a52'; rr(c, x - 19, y - 19, 38, 6, 2); c.fill();
+      c.fillStyle = '#c99166'; rr(c, x - 19, y - 12, 38, 5, 2); c.fill();
+      c.fillStyle = '#5b5876'; c.fillRect(x - 17, y - 8, 3, 8); c.fillRect(x + 14, y - 8, 3, 8);
     } else {
       c.fillStyle = '#9aa3bd'; rr(c, x - 17, y - O.h, 34, O.h, 4); c.fill();
       c.fillStyle = '#7c86a3';

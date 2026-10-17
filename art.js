@@ -696,8 +696,8 @@
   const ESPR = {
     suit:  { run: ['./en-cat-run.webp', 0.52],  jump: ['./en-cat-jump.webp', 0.51],  hit: ['./en-cat-hit.webp', 0.55] },
     dog:   { run: ['./en-dog-run.webp', 0.54],  jump: ['./en-dog-jump.webp', 0.49],  hit: ['./en-dog-hit.webp', 0.54] },
-    big:   { run: ['./en-bear-run.webp', 0.49], jump: ['./en-bear-jump.webp', 0.51], hit: ['./en-bear-hit.webp', 0.58] },
-    drone: { fly1: ['./en-bat-fly1.webp', 0.53], fly2: ['./en-bat-fly2.webp', 0.52], hit: ['./en-bat-hit.webp', 0.53] }
+    big:   { run: ['./en-bear-run.webp', 0.49], jump: ['./en-bear-jump.webp', 0.49], hit: ['./en-bear-hit.webp', 0.55] },
+    drone: { fly1: ['./en-bat-fly1.webp', 0.52], fly2: ['./en-bat-fly2.webp', 0.49], hit: ['./en-bat-hit.webp', 0.52] }
   };
   const EK = 0.476;
   const VIS_H = { suit: 56, dog: 38, big: 72, drone: 44 };      // 絵の見かけの高さ (飾りの位置に使う)

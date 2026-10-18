@@ -154,11 +154,16 @@
     toycar: { name: 'ラジコンカー', icon: '🚙', speed: 1.5, shield: true,  sec: 10, lift: 15 }
   };
   // ロープ (スパイダーマンのように、空の風船のわっかにつかまって、ぶらんと渡る)
-  const HOOK_H = 320;             // 風船のわっかの高さ (近くの屋上のうち高いほうから)
+  const HOOK_H = 400;             // 風船のわっかの高さ (近くの屋上のうち高いほうから)。高いほど、ふりの上のほうが 2 だんジャンプより高くなる
   const GRIP_H = 44;              // 足もとから、ロープをにぎる手まで
   const ROPE_MAX_L = 260;         // ロープの長さの上限 (ぶらさがったとき、いちばん下でも屋上に足がつかない長さ)
   const ROPE_REEL = 700;          // ロープを巻きとる速さ (px/秒)
-  const ROPE_PULL = 520;          // ぶらさがり中、前へ進む力 (px/秒^2)
+  const ROPE_PUMP = 1500;         // ぶらさがり中、ふりの向きに前へ加速する力 (px/秒^2)。こいで、ふりを大きくする
+  const ROPE_TOP = 92;            // ふりの角度がこれをこえると自動ではなす (度。わっかの真横 = 90)
+  const ROPE_FLING = 1.15;        // はなした瞬間、勢いを何倍にするか
+  const ROPE_DASH = 1.6;          // ロープのあと、走る速さの倍率 (着地してから DASH_T 秒かけて 1 倍へもどる)
+  const DASH_T = 1.8;
+  const ROPE_GEM_DEG = [70, 80, 88];  // ロープでしか取れない宝石: ふりの円の上、わっかから前へこの角度
   const ROPE_KICK = 560;          // 地面からつかまったとき、とびあがる速さ
   const ROPE_MAX_T = 4;           // つかまっていられる秒
   // 屋上の 2 かい (給水タンク・看板の上)。上から乗れて、下からは通りぬける
@@ -253,9 +258,19 @@
       }
     }
     populate(world, b, bs[i - 1] || null, r);
-    // ぶらさがったとき、ふりの一番下で取れる宝石
+    // ロープでしか取れない宝石: ふりの円 (半径 ROPE_MAX_L) の前の上のほう。2 だんジャンプより高い
+    // (このビルの屋上の上だけ。2 かいの上には置かない = 2 かいから 2 だんジャンプでは取れない)
     for (const h of b.hooks) {
-      if (r() < 0.45) b.roof.items.push({ x: h.x, y: h.y + ROPE_MAX_L + 20, t: 'gem', k: pickGem(r, 2) });
+      if (r() < 0.55) {
+        const pts = ROPE_GEM_DEG.map((deg) => {
+          const a = deg * Math.PI / 180;
+          return { x: Math.round(h.x + Math.sin(a) * ROPE_MAX_L), y: Math.round(h.y + Math.cos(a) * ROPE_MAX_L + 20) };
+        });
+        const okAll = pts.every((q) => q.x > b.x + 10 && q.x < b.x + b.w - 10 && !b.decks.some((d) => q.x > d.x0 - 60 && q.x < d.x1 + 60));
+        if (!okAll) continue;
+        h.gems = true;
+        for (const q of pts) b.roof.items.push({ x: q.x, y: q.y, t: 'gem', k: pickGem(r, 2), rope: 1 });
+      }
     }
     bs.push(b);
     return b;
@@ -579,7 +594,7 @@
       events: [],
       p: {
         x: 0, y: world.b[0].roofY, vx: 0, vy: 0, hw: PLAYER_HW, h: PLAYER_H,
-        onGround: true, ground: 0.1, inside: -1, stun: 0, inv: 0, carry: null, ride: null, rope: null, air2: false, airT: 0, jumps2: 0, cd: 0,
+        onGround: true, ground: 0.1, inside: -1, stun: 0, inv: 0, carry: null, ride: null, rope: null, dash: 0, air2: false, airT: 0, jumps2: 0, cd: 0,
         anim: 0, jumping: false, blocked: false, hold: 0, charge: 0, gunPrev: null
       },
       in: { jumpHeld: false, fireHeld: false, grabHeld: false, jumpBuf: 0, doorBuf: 0, grabBuf: 0, bombBuf: 0 },
@@ -1190,7 +1205,7 @@
     }
   }
 
-  /** つかまれる風船のわっか (足もとから見て、前の 190px・うしろの 120px・高さ 120〜380px)。いちばん近くの 1 つ。 */
+  /** つかまれる風船のわっか (足もとから見て、前の 190px・うしろの 120px・高さ 120〜470px)。いちばん近くの 1 つ。 */
   function nearHook(g) {
     const p = g.p;
     if (p.inside >= 0 || p.stun > 0 || p.rope) return null;
@@ -1199,7 +1214,7 @@
     for (let k = Math.max(0, j - 1); k <= j + 3 && k < g.world.b.length; k++) {
       for (const h of g.world.b[k].hooks) {
         const dx = h.x - p.x, dy = (p.y - GRIP_H) - h.y;
-        if (dx < -120 || dx > 190 || dy < 120 || dy > 380) continue;
+        if (dx < -120 || dx > 190 || dy < 120 || dy > 470) continue;
         const d = Math.abs(dx - 60);
         if (d < bd) { bd = d; best = h; }
       }
@@ -1223,6 +1238,10 @@
     emit(g, 'unrope', p.x, p.y, { why: why });
     p.rope = null;
     p.air2 = false; p.jumping = false; p.ground = 0;
+    if (why !== 'land') {                                  // ふりの勢いで飛びだす
+      p.vx *= ROPE_FLING; p.vy *= ROPE_FLING;
+      p.dash = DASH_T;                                     // 着地しても、しばらく速く走る (ロープの勢い)
+    }
     if (boost) p.vy = Math.min(p.vy, -boost);
   }
 
@@ -1245,6 +1264,21 @@
       const vr = p.vx * nx + p.vy * ny;
       if (vr > 0) { p.vx -= vr * nx; p.vy -= vr * ny; }
     }
+  }
+
+  /** いまのふりの角度 (度)。わっかの真下が 0、前 (右) へ行くほど +、真横で 90 */
+  function ropeDeg(p) {
+    const r = p.rope;
+    return Math.atan2(p.x - r.ax, (p.y - GRIP_H) - r.ay) * 180 / Math.PI;
+  }
+
+  /** こぐ: ふりの円にそって前向き (右へ・上へ) に加速する。うしろへ戻るときはこがない */
+  function pumpRope(g, dt) {
+    const p = g.p, r = p.rope;
+    const dx = p.x - r.ax, dy = (p.y - GRIP_H) - r.ay;
+    const d = Math.hypot(dx, dy) || 1;
+    const tx = dy / d, ty = -dx / d;                   // 前向きの接線 (真下にいるとき (1, 0))
+    if (p.vx * tx + p.vy * ty > -60) { p.vx += tx * ROPE_PUMP * dt; p.vy += ty * ROPE_PUMP * dt; }
   }
 
   function rideLift(p) { return p.ride ? RIDES[p.ride.k].lift : 0; }
@@ -1354,16 +1388,21 @@
     if (p.rope) {
       if (!I.grabHeld || p.stun > 0) endRope(g, 'let', 0);
       else if (I.jumpBuf > 0) { I.jumpBuf = 0; endRope(g, 'jump', 460); }
-      else if (p.rope.t > ROPE_MAX_T || p.x > p.rope.ax + p.rope.L * 0.88) endRope(g, 'auto', 0);
+      else if (p.rope.t > ROPE_MAX_T || ropeDeg(p) > ROPE_TOP) endRope(g, 'auto', 0);
     } else if (I.grabBuf > 0 && I.grabHeld && !p.carry && !(p.onGround && nearProp(g))) {
       const h = nearHook(g);
       if (h) { I.grabBuf = 0; startRope(g, h); }
     }
     if (p.rope) {
       stepRopeLength(g, dt);
-      p.vx += ROPE_PULL * dt;
+      pumpRope(g, dt);
+    } else if (!p.onGround && p.dash > 0) {
+      // ロープからはなれて飛んでいる間は、ふりの勢いのまま (横の速さを上書きしない)
+      p.vx = Math.max(p.vx, speedAt(p.x));
     } else {
-      p.vx = p.stun > 0 ? 0 : speedAt(p.x) * (p.ride ? RIDES[p.ride.k].speed : 1);
+      if (p.dash > 0) p.dash = Math.max(0, p.dash - dt);
+      const dashK = 1 + (ROPE_DASH - 1) * (p.dash / DASH_T);
+      p.vx = p.stun > 0 ? 0 : speedAt(p.x) * (p.ride ? RIDES[p.ride.k].speed : 1) * dashK;
     }
     if (p.onGround) p.ground = 0.1; else p.ground -= dt;
     if (p.rope) {
@@ -1506,7 +1545,7 @@
     // 定数
     G: G, JUMP_V: JUMP_V, CUT_V: CUT_V, KILL_Y: KILL_Y, FLOOR_OFF: FLOOR_OFF, THROW_G: THROW_G,
     PLAYER_HW: PLAYER_HW, PLAYER_H: PLAYER_H,
-    GUNS: GUNS, GUN_BY_ID: GUN_BY_ID, PROPS: PROPS, RIDES: RIDES, GEMS: GEMS, GEM_Y: GEM_Y, DECK_H: DECK_H, DECK_END: DECK_END, ROPE_MAX_L: ROPE_MAX_L, GRIP_H: GRIP_H, HOOK_H: HOOK_H, nearHook: nearHook, UPGRADES: UPGRADES, gemCost: gemCost, ENEMIES: ENEMIES,
+    GUNS: GUNS, GUN_BY_ID: GUN_BY_ID, PROPS: PROPS, RIDES: RIDES, GEMS: GEMS, GEM_Y: GEM_Y, DECK_H: DECK_H, DECK_END: DECK_END, ROPE_MAX_L: ROPE_MAX_L, ROPE_GEM_DEG: ROPE_GEM_DEG, ROPE_DASH: ROPE_DASH, GRIP_H: GRIP_H, HOOK_H: HOOK_H, nearHook: nearHook, UPGRADES: UPGRADES, gemCost: gemCost, ENEMIES: ENEMIES,
     // 乱数
     mulberry32: mulberry32, shuffle: shuffle,
     // 世界

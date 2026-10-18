@@ -626,6 +626,8 @@
   }
 
   // ------------------------------------------------------------ カメラ
+  const CAM_TOP = 300;    // 主人公の足もとは、画面の上から少なくともこれだけ下 (HUD とヒントの下)
+  const CAM_HOOK = 150;   // わっかは、画面の上からこれだけ下
   function snapCamera(g, cam) {
     cam.x = g.p.x - SPY_X;
     cam.ref = g.p.y;
@@ -640,8 +642,12 @@
     if (p.onGround || p.y > cam.ref + 140) {
       cam.ref += (refY - cam.ref) * Math.min(1, dt * 5);
     }
-    const target = cam.ref - app.view.h * (0.6 + 0.1 * (app.view.facade || 0));   // 地上ステージは、道を少し下に見せて街並みを広く
-    cam.y += (target - cam.y) * Math.min(1, dt * 6);
+    let target = cam.ref - app.view.h * (0.6 + 0.1 * (app.view.facade || 0));   // 地上ステージは、道を少し下に見せて街並みを広く
+    // 高く上がったとき (ロープのふり) は、上の HUD に隠れないよう持ち上げる。ぶらさがり中・近くの風船も見せる
+    target = Math.min(target, p.y - CAM_TOP);
+    const h = p.rope ? { y: p.rope.ay } : C.nearHook(g);
+    if (h) target = Math.min(target, h.y - CAM_HOOK);
+    cam.y += (target - cam.y) * Math.min(1, dt * (target < cam.y ? 10 : 6));   // 上がるときは早めに追う
   }
 
   // ------------------------------------------------------------ 1 コマ
@@ -665,7 +671,9 @@
       if (a.prevGround) { a.air = 0; a.flipOn = false; a.theta = 0; a.ease = 0; a.maxVy = 0; }
       a.air += d;
       if (p.vy > a.maxVy) a.maxVy = p.vy;
-      if (!a.flipOn && a.theta === 0 && a.air >= 0.1 && a.air < 0.2 && p.vy < -480 && p.jumping && !p.carry && p.stun <= 0) {
+      // 0.1 秒の時点の上向きの速さで決める (いまの vy から重力ぶん戻す)。いまの vy で見ると、
+      // 条件が 2 コマぶんしか無く、1 コマ遅れると回らなかった (12 回に 1 回)
+      if (!a.flipOn && a.theta === 0 && a.air >= 0.1 && a.air < 0.2 && p.vy - C.G * (a.air - 0.1) < -480 && p.jumping && !p.carry && p.stun <= 0) {
         a.flipOn = true; a.w = TURN / 0.54; a.flips++; say('flip');
       }
       if (a.flipOn) {
@@ -732,6 +740,7 @@
         case 'dry': toast('水ぎれ! タンク💧をひろおう', 1400); break;
         case 'nope': if (g.bombs <= 0) toast('水ばくだんが ないよ', 1200); break;
         case 'jump': app.jumpN = (app.jumpN || 0) + 1; if (app.jumpN === 5) tip('djump', '空中でもういちどジャンプできるよ(2だんジャンプ)'); break;
+        case 'unrope': if (ev.why !== 'land') tip('ropedash', '🕸️ ロープの勢いで、しばらく速く走れる! はなしたあと 2だんジャンプも使えるよ'); break;
         case 'gem': tip('gem', '💎宝石は「ぶきや → きたえる」で、じぶんを強くできるよ'); break;
         case 'trip': app.shake = Math.max(app.shake, 0.15); break;
         case 'ride': toast(C.RIDES[ev.k].icon + ' ' + C.RIDES[ev.k].name + '! はやいよ' + (C.RIDES[ev.k].shield ? '\n敵にぶつかられても はね飛ばす!' : '\nとっても はやいよ'), 1800); break;

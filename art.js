@@ -434,6 +434,11 @@
       gr.addColorStop(0, 'rgba(255,245,170,' + (0.55 + 0.3 * u).toFixed(2) + ')'); gr.addColorStop(1, 'rgba(255,245,170,0)');
       c.fillStyle = gr; c.fillRect(x - 46, y - 46, 92, 92);
     }
+    if (h.gems) {                                         // ロープでしか取れない宝石への道すじ (点線のふり)
+      c.save(); c.setLineDash([3, 7]); c.strokeStyle = 'rgba(255,245,170,.55)'; c.lineWidth = 2;
+      c.beginPath(); c.arc(x, y, C.ROPE_MAX_L, Math.PI / 2 - 1.62, Math.PI / 2 - 0.15, false); c.stroke();
+      c.restore();
+    }
     c.strokeStyle = 'rgba(255,255,255,.75)'; c.lineWidth = 1.4;           // 風船のひも
     c.beginPath(); c.moveTo(x, y - 8); c.quadraticCurveTo(x + 4, y - 22 + bob, x, y - 34 + bob); c.stroke();
     c.fillStyle = col;                                                     // 風船
@@ -1320,6 +1325,16 @@
 
     // 主人公
     const gun = C.curGun(g);
+    if (p.dash > 0) {                                       // ロープの勢い: うしろに流れる線
+      const u = Math.min(1, p.dash / 1.8);
+      c.save(); c.strokeStyle = 'rgba(255,246,200,' + (0.65 * u).toFixed(2) + ')'; c.lineCap = 'round';
+      for (let k = 0; k < 3; k++) {
+        const yy = p.y - 14 - k * 13, len = 26 + 14 * Math.sin(t * 20 + k * 2);
+        c.lineWidth = 3 - k * 0.6;
+        c.beginPath(); c.moveTo(p.x - 18, yy); c.lineTo(p.x - 18 - len, yy); c.stroke();
+      }
+      c.restore();
+    }
     let swing = null;
     if (p.rope) {                                           // ぶらさがり: 風船のわっかから手まで、ロープ
       const gx = p.x + 1, gy = p.y - C.GRIP_H - 4;

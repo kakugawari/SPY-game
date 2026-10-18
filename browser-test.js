@@ -634,6 +634,24 @@ async function run() {
       return { flips: a.flips - f0, maxSpin: a.maxSpin, mid, end: a.spin, endTheta: a.theta, onGround: g.p.onGround };
     });
     ok(fl.flips === 1 && fl.maxSpin > Math.PI * 2 * 0.9, `押しつづけたジャンプで、後ろへ 1 回転する (${fl.flips} 回・最大 ${fl.maxSpin.toFixed(1)} rad / 1 回転 = 6.3)`);
+    // 跳んだ直後に 1 コマ止まっても (遅い端末)、回る。条件が 2 コマぶんしか無かったときは、ここで回らなかった
+    let janks = 0;
+    for (let k = 0; k < 4; k++) {
+      await settle();
+      const jk = await page.evaluate(async (wait) => {
+        const a = window.__app.state().animPlay, g = window.__app.game(), f0 = a.flips;
+        window.__app.press('jump', true);
+        await new Promise((r) => setTimeout(r, wait));
+        const t = performance.now(); while (performance.now() - t < 70) { /* 1 コマぶん止める */ }
+        const t0 = performance.now();
+        while (performance.now() - t0 < 1000) { await new Promise((r) => setTimeout(r, 16)); if (performance.now() - t0 > 400 && g.p.onGround) break; }
+        window.__app.press('jump', false);
+        await new Promise((r) => setTimeout(r, 250));
+        return a.flips - f0;
+      }, 70 + k * 12);
+      if (jk === 1) janks++;
+    }
+    ok(janks === 4, `跳んだ直後に 1 コマ止まっても、バク転する (${janks} / 4)`);
     ok(fl.mid < -1 && Math.abs(fl.end) < 0.01 && fl.onGround, `空中ではかたむき (${fl.mid.toFixed(1)})、着地では元にもどる (${fl.end.toFixed(2)})`);
     // ちょん跳び: 回らない
     await settle();
@@ -848,6 +866,16 @@ async function run() {
     await sleep(120);
     const l0 = await lab();
     ok(l0.lb === 'ロープ' && l0.glow, `風船のわっかの近くで、ボタンが「ロープ」になって光る (${l0.lb} / 光る ${l0.glow})`);
+    await page.evaluate(() => {                              // ふりの間、主人公の頭が画面のどこまで上がるか
+      window.__ropeTop = 1e9;
+      const tick = () => {
+        const g = window.__app.game(), v = window.__app.state().view;
+        if (!g) return;
+        if (g.p.rope || !g.p.onGround) window.__ropeTop = Math.min(window.__ropeTop, (g.p.y - 70 - v.camY) * document.getElementById('cv').clientWidth / v.w);
+        if (window.__ropeTop !== -1) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
     await rtouch.start(1, gb.x, gb.y);                       // 指でおしっぱなし
     await sleep(350);
     const l1 = await lab();
@@ -863,6 +891,8 @@ async function run() {
     await page.waitForFunction(() => window.__app.game().p.onGround || window.__app.game().over, null, { timeout: 4000 });
     const fin = await page.evaluate(() => { const g = window.__app.game(); return { x: g.p.x, over: g.over }; });
     ok(!fin.over && fin.x - rx0 > 150, `ぶらんと渡って、むこうの屋上に着く (${Math.round(fin.x - rx0)}px 進んだ / over ${fin.over})`);
+    const ropeTop = await page.evaluate(() => { const t = window.__ropeTop; window.__ropeTop = -1; return { t, hud: document.getElementById('hGun').getBoundingClientRect().bottom }; });
+    ok(ropeTop.t > ropeTop.hud + 10, `高くふっても、主人公は上の HUD に隠れない (頭 ${Math.round(ropeTop.t)}pt / HUD の下 ${Math.round(ropeTop.hud)}pt)`);
     // マウスでも同じ (おして、はなす)
     await putNearHook(110);
     await sleep(120);

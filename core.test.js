@@ -849,10 +849,12 @@ test('ロープ: ボタンをおしている間ぶらさがり、はなすと飛
   for (let i = 0; i < 60 * 0.8; i++) { Core.step(g, DT); if (g.p.rope) attached = true; g.events.forEach((e) => { if (e.t === 'unrope') endWhy = e.why; }); g.events.length = 0; }
   assert.ok(attached && g.p.rope, 'つかまった');
   assert.ok(!g.p.onGround && g.p.vx > 200, `飛んでいる (vx ${g.p.vx.toFixed(0)})`);
+  const vxBefore = g.p.vx;
   Core.input(g, 'grab', false);
   Core.step(g, DT);
   assert.ok(!g.p.rope, 'はなれた');
   const vxAfter = g.p.vx;
+  assert.ok(vxAfter > vxBefore * 1.1, `はなすと勢いが増す (${vxBefore.toFixed(0)} → ${vxAfter.toFixed(0)})`);
   assert.ok(vxAfter > 150, `はなれても勢いが残る (${vxAfter.toFixed(0)})`);
   for (let i = 0; i < 60 * 3 && !g.over && !g.p.onGround; i++) Core.step(g, DT);
   assert.ok(!g.over && g.p.onGround && g.p.x > hb.x, `むこうの屋上に着いた (x ${Math.round(g.p.x)} / 屋上の左はし ${hb.x})`);
@@ -910,26 +912,99 @@ test('ロープ: ジャンプをおすと、上へ飛んではなれる。つか
   assert.ok(!e.p.rope);
 });
 
-test('ロープ: ふりの一番下の宝石は、ぶらさがると取れる。つかまっていられるのは 4 秒まで', () => {
-  let gems = 0, tot = 0;
+// 2 だんジャンプ (Lv0・いちばん高く跳ぶ押し方) で、足が屋上からどこまで上がるか
+function bestJumpApex(jumpLv) {
+  const g = Core.newGame({ seed: 1, noEnemies: true, up: { jump: jumpLv || 0 } });
+  Core.ensure(g.world, 4000);
+  const b = g.world.b.find((q) => q.w > 600 && !q.ground && q.i > 0);
+  b.roof.props.length = 0;
+  g.p.x = b.x + 40; g.p.y = b.roofY; g.p.vy = 0; g.p.onGround = true; g.p.inside = -1;
+  Core.input(g, 'jump', true);
+  let top = 0, second = false;
+  for (let i = 0; i < 60 * 2; i++) {
+    Core.step(g, DT);
+    if (!second && g.p.vy >= 0) { Core.input(g, 'jump', false); Core.step(g, DT); Core.input(g, 'jump', true); second = true; }
+    top = Math.max(top, b.roofY - g.p.y);
+    if (second && g.p.onGround) break;
+  }
+  return top;
+}
+
+test('ロープ: 風船のふりの円の上に、ロープでしか取れない宝石がある (Lv0 の 2 だんジャンプでは届かない)', () => {
+  const apex = bestJumpApex(0);
+  assert.ok(apex > 200 && apex < 300, `2 だんジャンプの高さ ${apex.toFixed(0)}`);
+  let sets = 0, gems = 0, minMargin = 1e9;
   for (let seed = 1; seed <= 30; seed++) {
     const w = Core.createWorld(seed);
     Core.ensure(w, Core.STAGE_PX * 3);
-    for (const b of w.b) for (const h of b.hooks) for (const it of b.roof.items) {
-      if (it.t === 'gem' && it.x === h.x && it.y === h.y + Core.ROPE_MAX_L + 20) gems++;
-      tot++;
+    for (const b of w.b) for (const it of b.roof.items) {
+      if (!it.rope) continue;
+      gems++;
+      assert.strictEqual(it.t, 'gem');
+      const h = w.b.flatMap((q) => q.hooks).find((q) => q.gems && Math.abs(Math.hypot(it.x - q.x, it.y - 20 - q.y) - Core.ROPE_MAX_L) < 2);
+      assert.ok(h, 'ふりの円の上にある');
+      // 取れるのは 足 - 24 が宝石から 30 以内 → 足が (宝石 + 54) より上
+      const need = (h.y + Core.HOOK_H) - (it.y + 54);   // 高いほうの屋上から
+      minMargin = Math.min(minMargin, need - apex);
+      assert.ok(it.x > b.x && it.x < b.x + b.w, 'そのビルの屋上の上');
+      assert.ok(!b.decks.some((d) => it.x > d.x0 - 60 && it.x < d.x1 + 60), '2 かいの上には無い');
     }
+    for (const b of w.b) for (const h of b.hooks) if (h.gems) sets++;
   }
-  assert.ok(gems >= 10, `風船の下の宝石 ${gems}`);
+  assert.ok(sets >= 20 && gems === sets * Core.ROPE_GEM_DEG.length, `風船 ${sets} / 宝石 ${gems}`);
+  assert.ok(minMargin > 0, `2 だんジャンプで届いてしまう (あと ${minMargin.toFixed(0)}px)`);
+});
+
+test('ロープ: ぶらさがっておしっぱなしにすると、ふりの宝石が取れる。ある角度で自動ではなれる', () => {
+  let took = 0, all = 0, auto = 0, n = 0;
+  for (let seed = 1; seed <= 40 && n < 12; seed++) {
+    const g = Core.newGame({ seed: seed, noEnemies: true });
+    Core.ensure(g.world, 40000);
+    const hb = g.world.b.find((q) => q.i > 2 && q.hooks.some((h) => h.gems && h.x < q.x));
+    if (!hb) continue;
+    const h = hb.hooks.find((q) => q.gems && q.x < hb.x), pv = g.world.b[hb.i - 1];
+    pv.roof.props.length = 0;
+    g.p.x = h.x - 100; g.p.y = pv.roofY; g.p.vy = 0; g.p.onGround = true; g.p.inside = -1;
+    const before = hb.roof.items.filter((it) => it.rope).length;
+    Core.input(g, 'grab', true);
+    for (let i = 0; i < 60 * 6 && !g.over && !g.p.onGround || i < 5; i++) {
+      Core.step(g, DT);
+      g.events.forEach((e) => { if (e.t === 'unrope' && e.why === 'auto') auto++; });
+      g.events.length = 0;
+    }
+    took += before - hb.roof.items.filter((it) => it.rope).length; all += before; n++;
+  }
+  assert.ok(n >= 8, `ためした風船 ${n}`);
+  assert.ok(took >= all * 0.8, `ふりで取れた宝石 ${took} / ${all}`);
+  assert.ok(auto >= n * 0.8, `自動ではなれた ${auto} / ${n}`);
+});
+
+test('ロープ: はなすと勢いよく飛びだし (ふつうのジャンプより速い)、着地してからもしばらく速く走る (ROPE_DASH)', () => {
   const { g } = hookScene(5, 100);
+  const run = Core.speedAt(g.p.x);
   Core.input(g, 'grab', true);
-  let auto = false;
+  let maxVx = 0;
   for (let i = 0; i < 60 * 6 && !g.over; i++) {
     Core.step(g, DT);
-    g.events.forEach((e) => { if (e.t === 'unrope' && e.why === 'auto') auto = true; });
-    g.events.length = 0;
+    maxVx = Math.max(maxVx, g.p.vx);
+    if (!g.p.rope && i > 5) break;
   }
-  assert.ok(auto, 'おしっぱなしでも、ある所で自動ではなれる');
+  assert.ok(maxVx > run * 1.5, `ふりの速さ ${maxVx.toFixed(0)} / 走り ${run.toFixed(0)}`);
+  assert.ok(g.p.dash > 0, 'はなすとダッシュが付く');
+  for (let i = 0; i < 60 * 3 && !g.over && !g.p.onGround; i++) Core.step(g, DT);
+  assert.ok(g.p.onGround && !g.over, '着地した');
+  Core.step(g, DT);
+  assert.ok(g.p.vx > Core.speedAt(g.p.x) * 1.15, `着地のあとも速い (${g.p.vx.toFixed(0)} / ${Core.speedAt(g.p.x).toFixed(0)})`);
+  // 走りつづけて谷に落ちないよう、着いた屋上を長くのばしてから測る
+  const lb = Core.buildingAt(g.world, g.p.x); lb.w += 3000;
+  for (let i = 0; i < 60 * 2; i++) Core.step(g, DT);
+  assert.ok(!g.over && g.p.onGround);
+  assert.strictEqual(g.p.dash, 0, 'しばらくするとダッシュは終わる');
+  assert.ok(Math.abs(g.p.vx - Core.speedAt(g.p.x)) < 1, 'もとの速さ');
+  // ジャンプだけでは付かない
+  const j = Core.newGame({ seed: 5, noEnemies: true });
+  Core.input(j, 'jump', true); for (let i = 0; i < 20; i++) Core.step(j, DT);
+  assert.ok(!j.p.dash, 'ふつうのジャンプにダッシュは無い');
 });
 
 // ------------------------------------------------------------ 1 つのアクションボタン (入る・もつ・なげる・ロープ)
@@ -965,4 +1040,91 @@ test('アクションボタン: 近くにある物で、入る → なげる →
   assert.strictEqual(Core.hints(e).act, null);
   Core.input(e, 'act', true); for (let i = 0; i < 20; i++) Core.step(e, DT);
   assert.ok(!e.p.rope && !e.p.carry && e.p.inside === -1);
+});
+
+// ------------------------------------------------------------ 屋上の 2 かい (給水タンク・看板)
+function decksOf(seed, px) {
+  const w = Core.createWorld(seed);
+  Core.ensure(w, px || Core.STAGE_PX * 5);
+  return w;
+}
+
+test('2 かい: 屋上にだけあり、高さは DECK_H。左はしから 100px・右はしから DECK_END あけ、ドアと重ならない。2 つあれば 120px はなれる', () => {
+  let n = 0; const kinds = new Set();
+  for (let seed = 1; seed <= 30; seed++) {
+    const w = decksOf(seed);
+    for (const b of w.b) {
+      if (b.ground) { assert.strictEqual(b.decks.length, 0, '地上の道には無い'); continue; }
+      for (const d of b.decks) {
+        n++; kinds.add(d.k);
+        assert.strictEqual(d.y, b.roofY - Core.DECK_H);
+        assert.ok(d.x0 >= b.x + 100 && d.x1 <= b.x + b.w - Core.DECK_END, `はみだし seed ${seed}`);
+        assert.ok(d.x1 - d.x0 >= 150 && d.x1 - d.x0 <= 260);
+        if (b.door) assert.ok(d.x1 <= b.doorX - 70 || d.x0 >= b.doorX + 70, 'ドアに重なる');
+      }
+      const ds = b.decks.slice().sort((a, c) => a.x0 - c.x0);
+      for (let k = 1; k < ds.length; k++) assert.ok(ds[k].x0 - ds[k - 1].x1 >= 120, '2 かいどうしが近い');
+    }
+  }
+  assert.ok(n > 150 && kinds.has('tank') && kinds.has('sign'), `2 かいの数 ${n} / ${[...kinds]}`);
+});
+
+function deckScene(seed) {
+  const g = Core.newGame({ seed: seed, noEnemies: true });
+  Core.ensure(g.world, 30000);
+  const b = g.world.b.find((q) => q.i > 2 && q.decks.length);
+  const d = b.decks[0];
+  return { g, b, d };
+}
+
+test('2 かい: 長おしジャンプで上に乗れる。下からは通りぬける。乗っている間は onDeck', () => {
+  let landed = 0, through = 0;
+  for (let seed = 1; seed <= 20; seed++) {
+    const { g, b, d } = deckScene(seed);
+    b.roof.props.length = 0;
+    g.p.x = d.x0 - 60; g.p.y = b.roofY; g.p.vy = 0; g.p.onGround = true;
+    Core.input(g, 'jump', true);
+    let top = false, minY = 1e9;
+    for (let i = 0; i < 60; i++) { Core.step(g, DT); minY = Math.min(minY, g.p.y); if (g.p.onDeck) top = true; if (g.p.y < d.y + 30 && g.p.y > d.y - 5 && g.p.vy < 0) through++; }
+    Core.input(g, 'jump', false);
+    if (top) landed++;
+  }
+  assert.ok(landed >= 18, `長おしジャンプで乗れた ${landed}/20`);
+  assert.ok(through > 0, '下から上がるとき、2 かいの高さを通りぬけている (頭をぶつけない)');
+});
+
+test('2 かい: はしから走って落ちると、同じビルの屋上に着く (谷には落ちない)。どの 2 かいでも', () => {
+  let tried = 0;
+  for (let seed = 1; seed <= 25; seed++) {
+    const g = Core.newGame({ seed: seed, noEnemies: true });
+    Core.ensure(g.world, Core.STAGE_PX * 4);
+    for (const b of g.world.b) for (const d of b.decks) {
+      if (b.x > Core.STAGE_PX * 3.5) continue;
+      const h = Core.newGame({ seed: seed, noEnemies: true });
+      Core.ensure(h.world, Core.STAGE_PX * 4);
+      const hb = h.world.b[b.i];
+      h.p.x = d.x1 - 20; h.p.y = d.y; h.p.vy = 0; h.p.onGround = true;
+      let land = null;
+      for (let i = 0; i < 120 && !h.over; i++) {
+        Core.step(h, DT);
+        if (h.p.onGround && !h.p.onDeck && h.p.x > d.x1) { land = h.p.x; break; }
+      }
+      tried++;
+      assert.ok(land != null && land < hb.x + hb.w - 20 && h.p.y === hb.roofY, `seed ${seed}: 2 かいから落ちて屋上に着かない (着いた x ${land} / 屋上の右はし ${hb.x + hb.w})`);
+    }
+  }
+  assert.ok(tried > 100, `ためした 2 かい ${tried}`);
+});
+
+test('2 かい: 敵は 2 かいに乗らない (屋上を走る)。2 かいの上の主人公はつかまらない', () => {
+  const { g, b, d } = deckScene(4);
+  const h = Core.newGame({ seed: 4 });
+  Core.ensure(h.world, 30000);
+  h.enemies.length = 0; h.spawnT = 999;
+  h.p.x = d.x0 + 20; h.p.y = d.y; h.p.vy = 0; h.p.onGround = true;
+  const e = Core.spawnEnemy(h, 'suit', h.p.x - 4);
+  e.y = b.roofY; e.onGround = true;
+  for (let i = 0; i < 20; i++) Core.step(h, DT);
+  assert.ok(!h.over && e.y === b.roofY, `つかまらない (${h.over}) / 敵は屋上 (${e.y} = ${b.roofY})`);
+  void g;
 });

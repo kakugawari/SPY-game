@@ -11,7 +11,7 @@
 
   const STEP = 1 / 60;
   const VIEW_W = 520;           // 画面に見える世界のはば
-  const SPY_X = 195;            // 主人公が画面の左から何の位置に立つか (世界の単位)
+  const SPY_X = 280;            // 主人公が画面の左から何の位置に立つか (世界の単位)。まん中より少し右 = うしろの敵が見える
 
   // ------------------------------------------------------------ 保存 (まとめて書く: 終わったとき・買ったときだけ)
   // 名前を変えても、保存の鍵は変えない (買った銃やコインが消えないように)
@@ -626,6 +626,8 @@
   }
 
   // ------------------------------------------------------------ カメラ
+  const CAM_TOP = 300;    // 主人公の足もとは、画面の上から少なくともこれだけ下 (HUD とヒントの下)
+  const CAM_HOOK = 150;   // わっかは、画面の上からこれだけ下
   function snapCamera(g, cam) {
     cam.x = g.p.x - SPY_X;
     cam.ref = g.p.y;
@@ -635,11 +637,17 @@
   function updateCamera(g, dt, cam) {
     const p = g.p;
     cam.x = p.x - SPY_X;
+    // 2 かい (給水タンク・看板) に乗っている間は、屋上の高さを見つづける (カメラが上下にゆれない)
+    const refY = p.onDeck ? (C.buildingAt(g.world, p.x) || { roofY: p.y }).roofY : p.y;
     if (p.onGround || p.y > cam.ref + 140) {
-      cam.ref += (p.y - cam.ref) * Math.min(1, dt * 5);
+      cam.ref += (refY - cam.ref) * Math.min(1, dt * 5);
     }
-    const target = cam.ref - app.view.h * (0.6 + 0.1 * (app.view.facade || 0));   // 地上ステージは、道を少し下に見せて街並みを広く
-    cam.y += (target - cam.y) * Math.min(1, dt * 6);
+    let target = cam.ref - app.view.h * (0.6 + 0.1 * (app.view.facade || 0));   // 地上ステージは、道を少し下に見せて街並みを広く
+    // 高く上がったとき (ロープのふり) は、上の HUD に隠れないよう持ち上げる。ぶらさがり中・近くの風船も見せる
+    target = Math.min(target, p.y - CAM_TOP);
+    const h = p.rope ? { y: p.rope.ay } : C.nearHook(g);
+    if (h) target = Math.min(target, h.y - CAM_HOOK);
+    cam.y += (target - cam.y) * Math.min(1, dt * (target < cam.y ? 10 : 6));   // 上がるときは早めに追う
   }
 
   // ------------------------------------------------------------ 1 コマ
@@ -663,7 +671,9 @@
       if (a.prevGround) { a.air = 0; a.flipOn = false; a.theta = 0; a.ease = 0; a.maxVy = 0; }
       a.air += d;
       if (p.vy > a.maxVy) a.maxVy = p.vy;
-      if (!a.flipOn && a.theta === 0 && a.air >= 0.1 && a.air < 0.2 && p.vy < -480 && p.jumping && !p.carry && p.stun <= 0) {
+      // 0.1 秒の時点の上向きの速さで決める (いまの vy から重力ぶん戻す)。いまの vy で見ると、
+      // 条件が 2 コマぶんしか無く、1 コマ遅れると回らなかった (12 回に 1 回)
+      if (!a.flipOn && a.theta === 0 && a.air >= 0.1 && a.air < 0.2 && p.vy - C.G * (a.air - 0.1) < -480 && p.jumping && !p.carry && p.stun <= 0) {
         a.flipOn = true; a.w = TURN / 0.54; a.flips++; say('flip');
       }
       if (a.flipOn) {
@@ -730,6 +740,7 @@
         case 'dry': toast('水ぎれ! タンク💧をひろおう', 1400); break;
         case 'nope': if (g.bombs <= 0) toast('水ばくだんが ないよ', 1200); break;
         case 'jump': app.jumpN = (app.jumpN || 0) + 1; if (app.jumpN === 5) tip('djump', '空中でもういちどジャンプできるよ(2だんジャンプ)'); break;
+        case 'unrope': if (ev.why !== 'land') tip('ropedash', '🕸️ ロープの勢いで、しばらく速く走れる! はなしたあと 2だんジャンプも使えるよ'); break;
         case 'gem': tip('gem', '💎宝石は「ぶきや → きたえる」で、じぶんを強くできるよ'); break;
         case 'trip': app.shake = Math.max(app.shake, 0.15); break;
         case 'ride': toast(C.RIDES[ev.k].icon + ' ' + C.RIDES[ev.k].name + '! はやいよ' + (C.RIDES[ev.k].shield ? '\n敵にぶつかられても はね飛ばす!' : '\nとっても はやいよ'), 1800); break;

@@ -442,6 +442,7 @@ async function run() {
     });
     await page.waitForFunction(() => window.__app.game().stage === 3, null, { timeout: 8000 }).catch(() => {});
     await page.waitForTimeout(2500);
+    await page.waitForFunction(() => window.__app.game().p.onGround || window.__app.game().over, null, { timeout: 3000 }).catch(() => {});   // 谷を跳んでいる最中に測らない
     const back = await page.evaluate(() => { const g = window.__app.game(), b = window.Core.buildingAt(g.world, g.p.x); return { stage: g.stage, over: g.over, facade: window.__app.state().view.facade, roof: !!(b && !b.ground), text: document.getElementById('hStage').textContent }; });
     ok(back.stage === 3 && !back.over && back.roof, `道のおわりで次のステージ (屋上) へ移れる (stage ${back.stage}, over=${back.over})`);
     ok(back.facade < 0.1, `屋上にもどると街並みは消える (${back.facade.toFixed(2)})`);
@@ -633,6 +634,24 @@ async function run() {
       return { flips: a.flips - f0, maxSpin: a.maxSpin, mid, end: a.spin, endTheta: a.theta, onGround: g.p.onGround };
     });
     ok(fl.flips === 1 && fl.maxSpin > Math.PI * 2 * 0.9, `押しつづけたジャンプで、後ろへ 1 回転する (${fl.flips} 回・最大 ${fl.maxSpin.toFixed(1)} rad / 1 回転 = 6.3)`);
+    // 跳んだ直後に 1 コマ止まっても (遅い端末)、回る。条件が 2 コマぶんしか無かったときは、ここで回らなかった
+    let janks = 0;
+    for (let k = 0; k < 4; k++) {
+      await settle();
+      const jk = await page.evaluate(async (wait) => {
+        const a = window.__app.state().animPlay, g = window.__app.game(), f0 = a.flips;
+        window.__app.press('jump', true);
+        await new Promise((r) => setTimeout(r, wait));
+        const t = performance.now(); while (performance.now() - t < 70) { /* 1 コマぶん止める */ }
+        const t0 = performance.now();
+        while (performance.now() - t0 < 1000) { await new Promise((r) => setTimeout(r, 16)); if (performance.now() - t0 > 400 && g.p.onGround) break; }
+        window.__app.press('jump', false);
+        await new Promise((r) => setTimeout(r, 250));
+        return a.flips - f0;
+      }, 70 + k * 12);
+      if (jk === 1) janks++;
+    }
+    ok(janks === 4, `跳んだ直後に 1 コマ止まっても、バク転する (${janks} / 4)`);
     ok(fl.mid < -1 && Math.abs(fl.end) < 0.01 && fl.onGround, `空中ではかたむき (${fl.mid.toFixed(1)})、着地では元にもどる (${fl.end.toFixed(2)})`);
     // ちょん跳び: 回らない
     await settle();
@@ -847,6 +866,16 @@ async function run() {
     await sleep(120);
     const l0 = await lab();
     ok(l0.lb === 'ロープ' && l0.glow, `風船のわっかの近くで、ボタンが「ロープ」になって光る (${l0.lb} / 光る ${l0.glow})`);
+    await page.evaluate(() => {                              // ふりの間、主人公の頭が画面のどこまで上がるか
+      window.__ropeTop = 1e9;
+      const tick = () => {
+        const g = window.__app.game(), v = window.__app.state().view;
+        if (!g) return;
+        if (g.p.rope || !g.p.onGround) window.__ropeTop = Math.min(window.__ropeTop, (g.p.y - 70 - v.camY) * document.getElementById('cv').clientWidth / v.w);
+        if (window.__ropeTop !== -1) requestAnimationFrame(tick);
+      };
+      requestAnimationFrame(tick);
+    });
     await rtouch.start(1, gb.x, gb.y);                       // 指でおしっぱなし
     await sleep(350);
     const l1 = await lab();
@@ -862,6 +891,8 @@ async function run() {
     await page.waitForFunction(() => window.__app.game().p.onGround || window.__app.game().over, null, { timeout: 4000 });
     const fin = await page.evaluate(() => { const g = window.__app.game(); return { x: g.p.x, over: g.over }; });
     ok(!fin.over && fin.x - rx0 > 150, `ぶらんと渡って、むこうの屋上に着く (${Math.round(fin.x - rx0)}px 進んだ / over ${fin.over})`);
+    const ropeTop = await page.evaluate(() => { const t = window.__ropeTop; window.__ropeTop = -1; return { t, hud: document.getElementById('hGun').getBoundingClientRect().bottom }; });
+    ok(ropeTop.t > ropeTop.hud + 10, `高くふっても、主人公は上の HUD に隠れない (頭 ${Math.round(ropeTop.t)}pt / HUD の下 ${Math.round(ropeTop.hud)}pt)`);
     // マウスでも同じ (おして、はなす)
     await putNearHook(110);
     await sleep(120);
@@ -884,6 +915,46 @@ async function run() {
       return n;
     });
     ok(balloon > 300, `風船の絵が画面に出る (風船色の画素 ${balloon})`);
+    await ctx.close();
+
+    // ------------------------------------------------------------ 主人公の位置・屋上の 2 かい・画面外の敵の目じるし
+    section('うしろが見える位置・屋上の 2 かい・画面外の敵');
+    ({ ctx, page } = await freshPage(browser));
+    page.on('pageerror', (e) => errors.push('2かい: ' + e.message));
+    await page.evaluate(() => window.__app.start({ seed: 9 }));
+    await sleep(300);
+    const pos = await page.evaluate(() => { const g = window.__app.game(), v = window.__app.state().view; return { sx: g.p.x - v.camX, w: v.w }; });
+    ok(pos.sx > pos.w * 0.5 && pos.sx < pos.w * 0.62, `主人公は、まん中より少し右に立つ (左から ${Math.round(pos.sx)} / 見える幅 ${Math.round(pos.w)})`);
+    const deckPx = await page.evaluate(async () => {
+      const g = window.__app.game(), C = window.Core;
+      C.ensure(g.world, 30000);
+      const b = g.world.b.find((q) => q.i > 3 && q.decks.length);
+      const d = b.decks[0];
+      g.p.x = d.x0 + 30; g.p.y = d.y; g.p.vy = 0; g.p.onGround = true; g.p.inside = -1; g.p.stun = 0.8;
+      g.enemies.length = 0; g.spawnT = 999;
+      await new Promise((r) => setTimeout(r, 250));
+      const cv = document.getElementById('cv'), c = cv.getContext('2d');
+      const dd = c.getImageData(0, 0, cv.width, cv.height).data;
+      let n = 0;
+      for (let i = 0; i < dd.length; i += 4) if (Math.abs(dd[i] - 255) < 4 && Math.abs(dd[i + 1] - 226) < 6 && Math.abs(dd[i + 2] - 122) < 8) n++;
+      return { n, onDeck: g.p.onDeck, y: g.p.y, dy: d.y };
+    });
+    ok(deckPx.onDeck && deckPx.y === deckPx.dy, `2 かいの上に立てる (onDeck ${deckPx.onDeck})`);
+    ok(deckPx.n > 400, `2 かいの「乗れるふち」(黄色) が描かれている (画素 ${deckPx.n})`);
+    const marks = await page.evaluate(async () => {
+      const g = window.__app.game(), v = window.__app.state().view, b = window.Core.buildingAt(g.world, g.p.x);
+      const e = window.Core.spawnEnemy(g, 'suit', g.p.x - 150);
+      e.y = b.roofY; e.stun = 5;
+      await new Promise((r) => setTimeout(r, 150));
+      const near = v.marks;
+      e.x = g.p.x - 520;
+      await new Promise((r) => setTimeout(r, 150));
+      const far = v.marks;
+      e.x = g.p.x - 3000;
+      await new Promise((r) => setTimeout(r, 150));
+      return { near, far, gone: v.marks };
+    });
+    ok(marks.near === 0 && marks.far === 1 && marks.gone === 0, `画面の左より外の敵にだけ「!」が出る (見えている 0 → 画面外 1 → とても遠い 0 : ${marks.near} / ${marks.far} / ${marks.gone})`);
     await ctx.close();
 
     // ------------------------------------------------------------ いちじていし

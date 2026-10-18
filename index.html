@@ -28,7 +28,7 @@
         <div class="hud-stage"><span id="hStage">ステージ 1</span><i><b id="hStageBar"></b></i></div>
       </div>
       <div class="hud-center">
-        <div class="hud-gun"><span class="gi" id="hGunIcon">🔫</span><span class="gn" id="hGunName">ミズデッポウ</span></div>
+        <div class="hud-gun" id="hGun" role="button" aria-label="ぶきかえ"><span class="gi" id="hGunIcon">🔫</span><span class="gn" id="hGunName">ミズデッポウ</span><span class="gsw" id="hGunSw" hidden>⇄</span></div>
         <div class="hud-water"><i id="hWater"></i></div>
       </div>
       <button type="button" id="btnPause" class="hud-pause" aria-label="いちじていし"><span>Ⅱ</span></button>
@@ -114,11 +114,9 @@
   <!-- そうさボタン (下) -->
   <div id="pad" hidden>
     <button type="button" id="bJump" class="pb big mint"><span class="ic">⤴</span><span class="lb">ジャンプ</span></button>
-    <div class="pgrid">
-      <button type="button" id="bBomb" class="pb sm orange"><span class="ic">💣</span><span class="lb">水ばくだん</span><em id="bombN">3</em></button>
-      <button type="button" id="bSwitch" class="pb sm violet"><span class="ic">🔄</span><span class="lb">ぶきかえ</span></button>
-      <button type="button" id="bDoor" class="pb sm rose"><span class="ic">🚪</span><span class="lb">入る</span></button>
-      <button type="button" id="bGrab" class="pb sm yellow"><span class="ic" id="grabIc">✋</span><span class="lb" id="grabLb">もつ</span></button>
+    <div class="pmid">
+      <button type="button" id="bBomb" class="pb bomb orange"><span class="ic">💣</span><span class="lb">水ばくだん</span><em id="bombN">3</em></button>
+      <button type="button" id="bAct" class="pb act yellow off"><span class="ic" id="actIc">✨</span><span class="lb" id="actLb">アクション</span></button>
     </div>
     <button type="button" id="bFire" class="pb big sky"><span class="ic">💦</span><span class="lb">うつ</span></button>
   </div>

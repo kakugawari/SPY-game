@@ -931,3 +931,38 @@ test('ロープ: ふりの一番下の宝石は、ぶらさがると取れる。
   }
   assert.ok(auto, 'おしっぱなしでも、ある所で自動ではなれる');
 });
+
+// ------------------------------------------------------------ 1 つのアクションボタン (入る・もつ・なげる・ロープ)
+test('アクションボタン: 近くにある物で、入る → なげる → もつ → ロープ の順に決まる。何も無ければ何もしない', () => {
+  const sc = () => { const s = hookScene(5, 110); s.g.p.carry = null; return s; };
+  // ロープ
+  let s = sc();
+  assert.strictEqual(Core.hints(s.g).act, 'rope');
+  Core.input(s.g, 'act', true); Core.step(s.g, DT);
+  assert.ok(s.g.p.rope && Core.hints(s.g).act === 'roping', 'おすとぶらさがる');
+  Core.input(s.g, 'act', false); Core.step(s.g, DT);
+  assert.ok(!s.g.p.rope, 'はなすとはなれる');
+  // もつ (ロープよりもてる物が先) → なげる
+  s = sc();
+  s.pv.roof.props.push({ x: s.g.p.x + 5, t: 'crate' });
+  assert.strictEqual(Core.hints(s.g).act, 'grab');
+  Core.input(s.g, 'act', true); Core.step(s.g, DT); Core.input(s.g, 'act', false);
+  assert.ok(s.g.p.carry && !s.g.p.rope, 'もった (ロープではなく)');
+  assert.strictEqual(Core.hints(s.g).act, 'carry');
+  Core.input(s.g, 'act', true); Core.step(s.g, DT); Core.input(s.g, 'act', false);
+  assert.ok(!s.g.p.carry && s.g.thrown.length === 1, 'なげた');
+  // 入る (ドアが先)
+  const g = Core.newGame({ seed: 5, noEnemies: true });
+  Core.ensure(g.world, 20000);
+  const b = g.world.b.find((q) => q.door && q.i > 2);
+  g.p.x = b.doorX; g.p.y = b.roofY; g.p.vy = 0; g.p.onGround = true; g.p.inside = -1;
+  b.roof.props.push({ x: b.doorX + 2, t: 'crate' });
+  assert.strictEqual(Core.hints(g).act, 'door');
+  Core.input(g, 'act', true); Core.step(g, DT); Core.input(g, 'act', false);
+  assert.strictEqual(g.p.inside, b.i, 'ドアに入った');
+  // 何も無い
+  const e = Core.newGame({ seed: 2, noEnemies: true });
+  assert.strictEqual(Core.hints(e).act, null);
+  Core.input(e, 'act', true); for (let i = 0; i < 20; i++) Core.step(e, DT);
+  assert.ok(!e.p.rope && !e.p.carry && e.p.inside === -1);
+});

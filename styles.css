@@ -108,11 +108,13 @@ button { font: inherit; color: inherit; touch-action: manipulation; }
 
 .hud-center { position: absolute; left: 50%; top: 10px; transform: translateX(-34%); width: max-content; max-width: 190px; }
 .hud-gun {
-  display: flex; align-items: center; gap: 6px; padding: 4px 10px 4px 6px;
+  display: flex; align-items: center; gap: 6px; padding: 4px 10px 4px 6px; min-height: 44px; box-sizing: border-box; pointer-events: auto; cursor: pointer; touch-action: none;
   background: rgba(42,33,96,.72); border: 2px solid rgba(255,255,255,.55); border-radius: 999px;
   font-weight: 800; font-size: 13px; white-space: nowrap;
 }
 .hud-gun .gi { font-size: 18px; }
+.hud-gun .gsw { margin-left: 2px; font-size: 16px; font-weight: 900; color: var(--yellow); }
+.hud-gun:active { filter: brightness(1.2); }
 .hud-water { margin-top: 6px; height: 12px; border-radius: 999px; background: rgba(42,33,96,.72); border: 2px solid rgba(255,255,255,.55); overflow: hidden; }
 .hud-water i { display: block; height: 100%; width: 100%; background: linear-gradient(#8fe3ff, #3aa8ff); transform-origin: left center; border-radius: 999px; }
 .hud-water.low i { background: linear-gradient(#ff9ec0, #ff5d8f); }
@@ -292,12 +294,16 @@ button { font: inherit; color: inherit; touch-action: manipulation; }
 #bJump { left: 8px; }
 #bFire { right: 8px; }
 
-.pgrid { position: absolute; left: 140px; top: 12px; width: 150px; display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.pgrid .pb { position: relative; width: 71px; height: 71px; border-radius: 22px; }
-.pgrid .ic { font-size: 28px; }
-.pgrid .lb { font-size: 11px; }
-.pgrid .pb em {
-  position: absolute; right: -6px; top: -6px; min-width: 24px; height: 24px; border-radius: 12px; padding: 0 5px;
+.pmid { position: absolute; left: 140px; top: 12px; width: 150px; display: flex; flex-direction: column; gap: 8px; }
+.pmid .pb { position: relative; width: 150px; }
+.pmid .bomb { height: 56px; flex-direction: row; gap: 8px; border-radius: 22px; }
+.pmid .bomb .ic { font-size: 26px; }
+.pmid .bomb .lb { font-size: 14px; margin-top: 0; }
+.pmid .act { height: 86px; border-radius: 26px; }
+.pmid .act .ic { font-size: 36px; }
+.pmid .act .lb { font-size: 16px; margin-top: 4px; }
+.pmid .pb em {
+  position: absolute; right: -6px; top: -8px; min-width: 24px; height: 24px; border-radius: 12px; padding: 0 5px;
   display: grid; place-items: center; background: var(--ink); border: 2px solid #fff; font-style: normal; font-size: 13px; font-weight: 900;
 }
 

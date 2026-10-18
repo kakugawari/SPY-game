@@ -193,7 +193,7 @@
     hDist: $('hDist'), hCoins: $('hCoins'), hGunIcon: $('hGunIcon'), hGunName: $('hGunName'), hWater: $('hWater'),
     warn: $('warn'), toast: $('toast'), sky2: $('sky2'),
     hStage: $('hStage'), hStageBar: $('hStageBar'), banner: $('stageBanner'), sbName: $('sbName'), sbSub: $('sbSub'),
-    bombN: $('bombN'), bDoor: $('bDoor'), bGrab: $('bGrab'), grabIc: $('grabIc'), grabLb: $('grabLb'), bBomb: $('bBomb'),
+    bombN: $('bombN'), bAct: $('bAct'), actIc: $('actIc'), actLb: $('actLb'), hGun: $('hGun'), hGunSw: $('hGunSw'), bBomb: $('bBomb'),
     vTitle: $('vTitle'), vShop: $('vShop'), vResult: $('vResult'), vPause: $('vPause')
   };
   const ctx2d = els.cv.getContext('2d');
@@ -490,7 +490,7 @@
 
   function releaseAll() {
     Object.keys(held).forEach((n) => { if (app.g) C.input(app.g, n, false); delete held[n]; });
-    ['bJump', 'bFire', 'bBomb', 'bSwitch', 'bDoor', 'bGrab'].forEach((id) => $(id).classList.remove('on'));
+    ['bJump', 'bFire', 'bBomb', 'bAct'].forEach((id) => $(id).classList.remove('on'));
   }
 
   function bindButton(id, name, hold) {
@@ -517,8 +517,8 @@
   const KEYS = {
     ' ': ['jump', true], ArrowUp: ['jump', true], w: ['jump', true],
     f: ['fire', true], j: ['fire', true], z: ['fire', true],
-    b: ['bomb', false], e: ['grab', true], g: ['grab', true], q: ['switch', false],
-    s: ['door', false], ArrowDown: ['door', false], Enter: ['door', false]
+    b: ['bomb', false], e: ['act', true], g: ['act', true], q: ['switch', false],
+    s: ['act', true], ArrowDown: ['act', true], Enter: ['act', true]
   };
 
   function onKey(e, down) {
@@ -571,18 +571,17 @@
     }
     setText(els.bombN, 'bombs', String(g.bombs));
     const h = C.hints(g);
-    const door = !!h.door;
-    const mode = h.roping ? 'roping' : h.carrying ? 'carry' : (h.rope && !h.grab) ? 'rope' : 'grab';
-    const grab = !!(h.grab || h.carrying || h.rope || h.roping);
-    if (app.cache.door !== door) { app.cache.door = door; els.bDoor.classList.toggle('glow', door); els.bDoor.classList.toggle('off', !door && false); }
-    if (app.cache.grabOn !== grab) { app.cache.grabOn = grab; els.bGrab.classList.toggle('glow', grab); }
-    if (app.cache.grabMode !== mode) {
-      app.cache.grabMode = mode;
-      const label = { roping: 'はなす', carry: 'なげる', rope: 'ロープ', grab: 'もつ' }[mode];
-      const icon = { roping: '🕸️', carry: '🤾', rope: '🕸️', grab: '✋' }[mode];
-      els.grabLb.textContent = label;
-      els.grabIc.textContent = icon;
+    const mode = h.act || 'none';
+    if (app.cache.actMode !== mode) {
+      app.cache.actMode = mode;
+      const T = { roping: ['🕸️', 'はなす'], door: ['🚪', '入る'], carry: ['🤾', 'なげる'], grab: ['✋', 'もつ'], rope: ['🕸️', 'ロープ'], none: ['✨', 'アクション'] }[mode];
+      els.actIc.textContent = T[0];
+      els.actLb.textContent = T[1];
+      els.bAct.classList.toggle('glow', mode !== 'none');
+      els.bAct.classList.toggle('off', mode === 'none');
     }
+    const many = g.guns.length > 1;
+    if (app.cache.many !== many) { app.cache.many = many; els.hGunSw.hidden = !many; }
     const noBomb = g.bombs <= 0;
     if (app.cache.noBomb !== noBomb) { app.cache.noBomb = noBomb; els.bBomb.classList.toggle('off', noBomb); }
     const warn = g.danger < 130 && !app.over;
@@ -750,6 +749,7 @@
     if (h.rope) tip('rope', '風船のわっかに「ロープ」! おしているあいだ ぶらんとゆれて、はなすと飛びだすよ');
     if (h.door) tip('door', '「入る」でビルの中へ。近道だよ!');
     if (h.grab && !h.carrying) tip('grab', '「もつ」→「なげる」で物を投げられる!');
+    if (g.guns.length > 1 && g.t > 3) tip('switch', '🔫 ぶきかえ: 上のぶき名をタップ (「うつ」を上へスワイプでも)');
     if (g.t > 12) tip('bomb', '「水ばくだん」は敵をまとめて吹き飛ばす!');
   }
 
@@ -852,9 +852,23 @@
     bindButton('bJump', 'jump', true);
     bindButton('bFire', 'fire', true);
     bindButton('bBomb', 'bomb', false);
-    bindButton('bSwitch', 'switch', false);
-    bindButton('bDoor', 'door', false);
-    bindButton('bGrab', 'grab', true);
+    bindButton('bAct', 'act', true);
+    // ぶきかえ: 上のぶき名をタップ (うつボタンを上へスワイプでも切りかわる)
+    els.hGun.addEventListener('pointerdown', (e) => {
+      e.preventDefault();
+      Snd.unlock();
+      press('switch', true); delete held.switch;
+    });
+    {
+      const fb = $('bFire');
+      let y0 = null, done = false;
+      fb.addEventListener('pointerdown', (e) => { y0 = e.clientY; done = false; });
+      fb.addEventListener('pointermove', (e) => {
+        if (y0 != null && !done && y0 - e.clientY > 56) { done = true; press('switch', true); delete held.switch; }
+      });
+      const end = () => { y0 = null; };
+      fb.addEventListener('pointerup', end); fb.addEventListener('pointercancel', end);
+    }
 
     $('btnPlay').addEventListener('click', () => { Snd.play('ui'); startGame(); });
     $('btnShop').addEventListener('click', () => { Snd.play('ui'); openShop('title'); });

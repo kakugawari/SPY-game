@@ -586,6 +586,10 @@
       case 'fire': I.fireHeld = down; break;
       case 'door': if (down) I.doorBuf = 0.15; break;
       case 'grab': I.grabHeld = down; if (down) I.grabBuf = 0.12; break;
+      case 'act':           // 1 つのボタン: ドアが近ければ入る / なければ もつ・なげる・ロープ (おしている間つかまる)
+        I.grabHeld = down;
+        if (down) { if (nearDoor(g)) I.doorBuf = 0.15; else I.grabBuf = 0.12; }
+        break;
       case 'bomb': if (down) I.bombBuf = 0.12; break;
       case 'switch': if (down) switchGun(g); break;
       default: break;
@@ -1427,10 +1431,25 @@
     g.danger = danger;
   }
 
+  /**
+   * 1 つのボタン「アクション」が、いま何をするか (おしたときの決めかたと、同じ順番)。
+   * 'roping' ぶらさがり中 / 'door' 入る / 'carry' なげる / 'grab' もつ / 'rope' ロープ / null なにもない
+   */
+  function actMode(g) {
+    const p = g.p;
+    if (p.rope) return 'roping';
+    if (nearDoor(g)) return 'door';
+    if (p.carry) return 'carry';
+    if (nearProp(g)) return 'grab';
+    if (nearHook(g)) return 'rope';
+    return null;
+  }
+
   /** ボタンの表示に使う状態。 */
   function hints(g) {
     return {
       door: !!nearDoor(g),
+      act: actMode(g),
       grab: !!nearProp(g),
       rope: !!nearHook(g),
       roping: !!g.p.rope,

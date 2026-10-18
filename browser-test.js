@@ -216,7 +216,7 @@ async function run() {
     await installBot(page);
     await page.evaluate(() => window.__app.start({ seed: 21, noEnemies: true }));
     await sleep(150);
-    const ids = ['bJump', 'bFire', 'bBomb', 'bSwitch', 'bDoor', 'bGrab', 'btnPause'];
+    const ids = ['bJump', 'bFire', 'bBomb', 'bAct', 'hGun', 'btnPause'];
     const rects = await page.evaluate((list) => list.map((id) => {
       const el = document.getElementById(id);
       const r = el.getBoundingClientRect();
@@ -335,12 +335,12 @@ async function run() {
       window.__doorB = b.i;
       g.p.x = b.doorX - 60; g.p.y = b.roofY; g.p.vy = 0; g.p.onGround = true;
     });
-    const glow0 = await page.evaluate(() => document.getElementById('bDoor').classList.contains('glow'));
+    const glow0 = await page.evaluate(() => (document.getElementById('bAct').classList.contains('glow') && document.getElementById('actLb').textContent === '入る'));
     ok(glow0 === false, 'ドアから遠いとき、入るボタンは光らない');
-    await page.waitForFunction(() => document.getElementById('bDoor').classList.contains('glow'), null, { timeout: 2000 }).catch(() => {});
-    const glow1 = await page.evaluate(() => document.getElementById('bDoor').classList.contains('glow'));
+    await page.waitForFunction(() => (document.getElementById('bAct').classList.contains('glow') && document.getElementById('actLb').textContent === '入る'), null, { timeout: 2000 }).catch(() => {});
+    const glow1 = await page.evaluate(() => (document.getElementById('bAct').classList.contains('glow') && document.getElementById('actLb').textContent === '入る'));
     ok(glow1 === true, 'ドアに近づくと、入るボタンが光る');
-    await page.locator('#bDoor').tap();
+    await page.locator('#bAct').tap();
     await page.waitForFunction(() => window.__app.game().p.inside >= 0, null, { timeout: 1500 }).catch(() => {});
     const inside = await page.evaluate(() => window.__app.game().p.inside);
     ok(inside === await page.evaluate(() => window.__doorB), `タップするとビルの中に入る (inside=${inside})`);
@@ -359,16 +359,16 @@ async function run() {
       g.p.x = b.roof.props[0].x - 50; g.p.y = b.roofY; g.p.vy = 0; g.p.onGround = true; g.p.inside = -1;
       g.p.stun = 0; g.p.inv = 0; g.p.carry = null;
     });
-    await page.waitForFunction(() => document.getElementById('bGrab').classList.contains('glow'), null, { timeout: 2000 }).catch(() => {});
-    await page.locator('#bGrab').tap();
+    await page.waitForFunction(() => (document.getElementById('bAct').classList.contains('glow') && document.getElementById('actLb').textContent === 'もつ'), null, { timeout: 2000 }).catch(() => {});
+    await page.locator('#bAct').tap();
     await page.waitForFunction(() => window.__app.game().p.carry, null, { timeout: 1500 }).catch(() => {});
-    const carried = await page.evaluate(() => ({ c: window.__app.game().p.carry, label: document.getElementById('grabLb').textContent }));
+    const carried = await page.evaluate(() => ({ c: window.__app.game().p.carry, label: document.getElementById('actLb').textContent }));
     ok(!!carried.c && carried.label === 'なげる', `近づいてタップするともてる。ボタンが「なげる」に変わる (${carried.c} / ${carried.label})`);
-    await page.locator('#bGrab').tap();
+    await page.locator('#bAct').tap();
     await page.waitForFunction(() => !window.__app.game().p.carry, null, { timeout: 1500 }).catch(() => {});
-    const thrown = await page.evaluate(() => ({ c: window.__app.game().p.carry, n: window.__app.game().thrown.length, label: document.getElementById('grabLb').textContent }));
-    ok(!thrown.c && thrown.n >= 1 && thrown.label === 'もつ', `もう一度タップすると投げる。ボタンは「もつ」に戻る (投げ物 ${thrown.n})`);
-    const ic = await page.evaluate(() => document.getElementById('grabIc').textContent.length);
+    const thrown = await page.evaluate(() => ({ c: window.__app.game().p.carry, n: window.__app.game().thrown.length, label: document.getElementById('actLb').textContent }));
+    ok(!thrown.c && thrown.n >= 1 && /^(もつ|アクション)$/.test(thrown.label), `もう一度タップすると投げる。ボタンは「なげる」でなくなる (投げ物 ${thrown.n})`);
+    const ic = await page.evaluate(() => document.getElementById('actIc').textContent.length);
     ok(ic > 0, 'ボタンの名前を変えても、中の絵が残っている');
     await ctx.close();
 
@@ -814,7 +814,7 @@ async function run() {
     await sleep(300);
     const rcdp = await ctx.newCDPSession(page);
     const rtouch = touchTool(rcdp);
-    const gb = await center(page, '#bGrab');
+    const gb = await center(page, '#bAct');
     const putNearHook = (dx) => page.evaluate((dx) => {
       const g = window.__app.game(), C = window.Core;
       C.ensure(g.world, 40000);
@@ -825,7 +825,7 @@ async function run() {
       g.enemies.length = 0; g.spawnT = 999;
       return { hx: h.x, bx: hb.x };
     }, dx);
-    const lab = () => page.evaluate(() => ({ lb: document.getElementById('grabLb').textContent, rope: !!window.__app.game().p.rope, glow: document.getElementById('bGrab').classList.contains('glow') }));
+    const lab = () => page.evaluate(() => ({ lb: document.getElementById('actLb').textContent, rope: !!window.__app.game().p.rope, glow: document.getElementById('bAct').classList.contains('glow') }));
     await putNearHook(110);
     await sleep(120);
     const l0 = await lab();
@@ -940,10 +940,23 @@ async function run() {
     await page.evaluate(() => window.__app.start({ seed: 21, noEnemies: true }));
     const guns = await page.evaluate(() => ({ list: window.__app.game().guns.slice(), cur: window.Core.curGun(window.__app.game()).id }));
     ok(guns.list.length === 2 && guns.cur === 'twin', `はじめは「つかう」にしたぶき (${guns.cur})。持っている ${guns.list.join(',')}`);
-    await page.locator('#bSwitch').tap();
+    await page.locator('#hGun').tap();
     await sleep(80);
     const sw = await page.evaluate(() => ({ cur: window.Core.curGun(window.__app.game()).id, name: document.getElementById('hGunName').textContent }));
-    ok(sw.cur === 'mizu' && sw.name === 'ミズデッポウ', `ぶきかえで切りかわって、表示も変わる (${sw.cur} / ${sw.name})`);
+    ok(sw.cur === 'mizu' && sw.name === 'ミズデッポウ', `ぶき名をタップすると切りかわって、表示も変わる (${sw.cur} / ${sw.name})`);
+    // 「うつ」ボタンを上へスワイプしても、ぶきかえ (うちながら)
+        const fcdp = await ctx.newCDPSession(page);
+    const ftouch = touchTool(fcdp);
+    const fireB = await center(page, '#bFire');
+    const cur0 = await page.evaluate(() => window.Core.curGun(window.__app.game()).id);
+    await ftouch.start(1, fireB.x, fireB.y);
+    await sleep(60);
+    await ftouch.move(1, fireB.x, fireB.y - 80);
+    await sleep(80);
+    const sw2 = await page.evaluate(() => ({ cur: window.Core.curGun(window.__app.game()).id, fire: window.__app.game().in.fireHeld }));
+    await ftouch.end(1);
+    ok(sw2.cur !== cur0 && sw2.fire === true, `「うつ」を上へスワイプすると、うちながら切りかわる (${cur0} → ${sw2.cur} / うっている ${sw2.fire})`);
+
     await ctx.close();
 
     // 前の版が残した保存でも開ける・新しい物が足されている

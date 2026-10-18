@@ -806,6 +806,69 @@ async function run() {
     ok(old.coins === 77 && old.gems === 0 && old.up.jump === 0 && old.owned.length === 2 && JSON.stringify(old.gemKinds) === '{}', `前の版の保存でも、宝石は 0 から始まる (${JSON.stringify(old.up)})`);
     await ctx.close();
 
+    // ------------------------------------------------------------ ロープ (風船のわっか)
+    section('ロープ (ぶらさがる)');
+    ({ ctx, page } = await freshPage(browser));
+    page.on('pageerror', (e) => errors.push('ロープ: ' + e.message));
+    await page.evaluate(() => window.__app.start({ seed: 5, noEnemies: true }));
+    await sleep(300);
+    const rcdp = await ctx.newCDPSession(page);
+    const rtouch = touchTool(rcdp);
+    const gb = await center(page, '#bGrab');
+    const putNearHook = (dx) => page.evaluate((dx) => {
+      const g = window.__app.game(), C = window.Core;
+      C.ensure(g.world, 40000);
+      const hb = g.world.b.find((q) => q.hooks.length && q.hooks[0].x < q.x && q.i > 2);
+      const pv = g.world.b[hb.i - 1], h = hb.hooks[0];
+      pv.roof.props.length = 0;
+      g.p.x = h.x - dx; g.p.y = pv.roofY; g.p.vy = 0; g.p.inside = -1; g.p.onGround = true; g.p.stun = 0; g.p.inv = 0;
+      g.enemies.length = 0; g.spawnT = 999;
+      return { hx: h.x, bx: hb.x };
+    }, dx);
+    const lab = () => page.evaluate(() => ({ lb: document.getElementById('grabLb').textContent, rope: !!window.__app.game().p.rope, glow: document.getElementById('bGrab').classList.contains('glow') }));
+    await putNearHook(110);
+    await sleep(120);
+    const l0 = await lab();
+    ok(l0.lb === 'ロープ' && l0.glow, `風船のわっかの近くで、ボタンが「ロープ」になって光る (${l0.lb} / 光る ${l0.glow})`);
+    await rtouch.start(1, gb.x, gb.y);                       // 指でおしっぱなし
+    await sleep(350);
+    const l1 = await lab();
+    ok(l1.rope && l1.lb === 'はなす', `指でおしている間は、ぶらさがる (${l1.rope} / ${l1.lb})`);
+    const rx0 = await page.evaluate(() => window.__app.game().p.x);
+    await sleep(450);
+    const l2 = await lab();
+    ok(l2.rope, '指をはなさないかぎり、つかまりつづける');
+    await rtouch.end(1);                                     // 指をはなす
+    await sleep(150);
+    const l3 = await lab();
+    ok(!l3.rope, `指をはなすと、はなれる (${l3.rope})`);
+    await page.waitForFunction(() => window.__app.game().p.onGround || window.__app.game().over, null, { timeout: 4000 });
+    const fin = await page.evaluate(() => { const g = window.__app.game(); return { x: g.p.x, over: g.over }; });
+    ok(!fin.over && fin.x - rx0 > 150, `ぶらんと渡って、むこうの屋上に着く (${Math.round(fin.x - rx0)}px 進んだ / over ${fin.over})`);
+    // マウスでも同じ (おして、はなす)
+    await putNearHook(110);
+    await sleep(120);
+    await page.mouse.move(gb.x, gb.y); await page.mouse.down();
+    await sleep(300);
+    const m1 = await lab();
+    await page.mouse.up();
+    await sleep(120);
+    const m2 = await lab();
+    ok(m1.rope && !m2.rope, `マウスでも、おすとつかまり、はなすとはなれる (${m1.rope} → ${m2.rope})`);
+    // うしろの風船が見えている (絵が出る): 風船の色のどれかの画素が、画面にある
+    await putNearHook(110);
+    await sleep(200);
+    const balloon = await page.evaluate(() => {
+      const cv = document.getElementById('cv'), c = cv.getContext('2d');
+      const d = c.getImageData(0, 0, cv.width, cv.height).data;
+      const want = [[255, 107, 138], [76, 201, 240], [255, 210, 63], [123, 224, 168], [181, 140, 255]];
+      let n = 0;
+      for (let i = 0; i < d.length; i += 4) for (const w of want) if (Math.abs(d[i] - w[0]) < 6 && Math.abs(d[i + 1] - w[1]) < 6 && Math.abs(d[i + 2] - w[2]) < 6) { n++; break; }
+      return n;
+    });
+    ok(balloon > 300, `風船の絵が画面に出る (風船色の画素 ${balloon})`);
+    await ctx.close();
+
     // ------------------------------------------------------------ いちじていし
     section('いちじていし・アプリを切りかえたとき');
     ({ ctx, page } = await freshPage(browser));

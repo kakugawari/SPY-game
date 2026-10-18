@@ -153,6 +153,17 @@
     board:  { name: 'スケボー',     icon: '🛹', speed: 1.3, shield: false, sec: 14, lift: 8 },
     toycar: { name: 'ラジコンカー', icon: '🚙', speed: 1.5, shield: true,  sec: 10, lift: 15 }
   };
+  // ロープ (スパイダーマンのように、空の風船のわっかにつかまって、ぶらんと渡る)
+  const HOOK_H = 320;             // 風船のわっかの高さ (近くの屋上のうち高いほうから)
+  const GRIP_H = 44;              // 足もとから、ロープをにぎる手まで
+  const ROPE_MAX_L = 260;         // ロープの長さの上限 (ぶらさがったとき、いちばん下でも屋上に足がつかない長さ)
+  const ROPE_REEL = 700;          // ロープを巻きとる速さ (px/秒)
+  const ROPE_PULL = 520;          // ぶらさがり中、前へ進む力 (px/秒^2)
+  const ROPE_KICK = 560;          // 地面からつかまったとき、とびあがる速さ
+  const ROPE_MAX_T = 4;           // つかまっていられる秒
+  const DOOR_MIN_W = 620;         // ドアのあるビルの、いちばん短い幅 (中は 500px ほど = 2 秒近く)
+  const DOOR_WAIT = 0.2;          // 敵がドアの前で、中へ入るまでに待つ秒
+  const DOOR_CHASE_GAP = 140;     // ビルの中で、敵はこの距離まで追いつく (それより近くはふつうの速さ)
   const AIR_JUMP_K = 0.85;        // 2 だんめの高さ (もとのジャンプに対する割合)
   const AIR_JUMP_AFTER = 0.08;    // 跳んでから、2 だんめがおせるまでの秒
 
@@ -212,7 +223,10 @@
         } else {
           b.w = Math.round(200 + r() * 360);
           if (i === 2) b.w = 480;
-          if (b.w >= 420 && (r() < 0.75 || i === 2)) b.door = true;
+          if (b.w >= 420 && (r() < 0.75 || i === 2)) {
+            b.door = true;
+            if (i !== 2) b.w = Math.round(DOOR_MIN_W + r() * 160);     // 中でたたかえる長さ (敵がはいってきて、撃てる)
+          }
         }
       }
     }
@@ -221,7 +235,25 @@
       b.doorX = Math.round(b.x + 50 + r() * 40);
       b.exitX = b.x + b.w - 120;
     }
+    b.hooks = [];
+    {
+      const pv = bs[i - 1];
+      if (pv && !b.ground && !pv.ground) {
+        const end = pv.x + pv.w, gap = b.x - end;
+        if (gap >= 70 && r() < 0.6) {                       // 谷の上の風船
+          const hy = Math.min(pv.roofY, b.roofY) - HOOK_H;
+          b.hooks.push({ x: Math.round(end + gap / 2), y: hy });
+        }
+      }
+      if (i > 0 && !b.ground && b.w >= 520 && r() < 0.3) {   // 長い屋上の上の風船
+        b.hooks.push({ x: Math.round(b.x + b.w * (0.4 + r() * 0.2)), y: b.roofY - HOOK_H });
+      }
+    }
     populate(world, b, bs[i - 1] || null, r);
+    // ぶらさがったとき、ふりの一番下で取れる宝石
+    for (const h of b.hooks) {
+      if (r() < 0.45) b.roof.items.push({ x: h.x, y: h.y + ROPE_MAX_L + 20, t: 'gem', k: pickGem(r, 2) });
+    }
     bs.push(b);
     return b;
   }
@@ -505,10 +537,10 @@
       events: [],
       p: {
         x: 0, y: world.b[0].roofY, vx: 0, vy: 0, hw: PLAYER_HW, h: PLAYER_H,
-        onGround: true, ground: 0.1, inside: -1, stun: 0, inv: 0, carry: null, ride: null, air2: false, airT: 0, jumps2: 0, cd: 0,
+        onGround: true, ground: 0.1, inside: -1, stun: 0, inv: 0, carry: null, ride: null, rope: null, air2: false, airT: 0, jumps2: 0, cd: 0,
         anim: 0, jumping: false, blocked: false, hold: 0, charge: 0, gunPrev: null
       },
-      in: { jumpHeld: false, fireHeld: false, jumpBuf: 0, doorBuf: 0, grabBuf: 0, bombBuf: 0 },
+      in: { jumpHeld: false, fireHeld: false, grabHeld: false, jumpBuf: 0, doorBuf: 0, grabBuf: 0, bombBuf: 0 },
       guns: guns,
       gunIdx: start >= 0 ? start : 0,
       water: 100,
@@ -553,7 +585,7 @@
       case 'jump': I.jumpHeld = down; if (down) I.jumpBuf = 0.12; break;
       case 'fire': I.fireHeld = down; break;
       case 'door': if (down) I.doorBuf = 0.15; break;
-      case 'grab': if (down) I.grabBuf = 0.12; break;
+      case 'grab': I.grabHeld = down; if (down) I.grabBuf = 0.12; break;
       case 'bomb': if (down) I.bombBuf = 0.12; break;
       case 'switch': if (down) switchGun(g); break;
       default: break;
@@ -678,6 +710,7 @@
     if (e.puddle) slow *= 0.5;
     let sp = speedAt(p.x) * T.k * slow;
     if (p.x - e.x > 190) sp *= 1.25;                // 遅れすぎたら追いつく
+    else if (e.inside >= 0 && e.inside === p.inside && p.x - e.x > DOOR_CHASE_GAP) sp *= 1.5;   // ビルの中では、すぐ後ろまで来る (撃つ的になる。それいじょうは近づかない)
     if (e.stun > 0) sp = 0;
 
     // どこへ向かうか
@@ -696,7 +729,7 @@
           door = true;
           sp = 0;
           e.doorT += dt;
-          if (e.doorT > 0.45) {
+          if (e.doorT > DOOR_WAIT) {
             e.inside = p.inside; e.x = b.doorX; e.y = b.floorY; e.vy = 0; e.doorT = 0;
             emit(g, 'enemyDoor', e.x, e.y, { id: e.id });
           }
@@ -1111,6 +1144,63 @@
     }
   }
 
+  /** つかまれる風船のわっか (足もとから見て、前の 190px・うしろの 120px・高さ 120〜380px)。いちばん近くの 1 つ。 */
+  function nearHook(g) {
+    const p = g.p;
+    if (p.inside >= 0 || p.stun > 0 || p.rope) return null;
+    const j = indexNear(g.world, p.x);
+    let best = null, bd = 1e9;
+    for (let k = Math.max(0, j - 1); k <= j + 3 && k < g.world.b.length; k++) {
+      for (const h of g.world.b[k].hooks) {
+        const dx = h.x - p.x, dy = (p.y - GRIP_H) - h.y;
+        if (dx < -120 || dx > 190 || dy < 120 || dy > 380) continue;
+        const d = Math.abs(dx - 60);
+        if (d < bd) { bd = d; best = h; }
+      }
+    }
+    return best;
+  }
+
+  function startRope(g, h) {
+    const p = g.p;
+    const gx = p.x, gy = p.y - GRIP_H;
+    const d = Math.hypot(gx - h.x, gy - h.y);
+    p.rope = { ax: h.x, ay: h.y, L: d, Lt: Math.min(d, ROPE_MAX_L), t: 0 };
+    if (p.onGround) { p.vy = -ROPE_KICK; p.onGround = false; p.y -= 2; }
+    p.jumping = false; p.air2 = true; p.airT = 0;
+    emit(g, 'rope', p.x, p.y, { hx: h.x, hy: h.y });
+  }
+
+  function endRope(g, why, boost) {
+    const p = g.p;
+    if (!p.rope) return;
+    emit(g, 'unrope', p.x, p.y, { why: why });
+    p.rope = null;
+    p.air2 = false; p.jumping = false; p.ground = 0;
+    if (boost) p.vy = Math.min(p.vy, -boost);
+  }
+
+  /** ぶらさがり中の、ロープの長さ (まきとる)・時間。 */
+  function stepRopeLength(g, dt) {
+    const r = g.p.rope;
+    r.t += dt;
+    if (r.L > r.Lt) r.L = Math.max(r.Lt, r.L - ROPE_REEL * dt);
+  }
+
+  /** stepBody のあと、ロープより遠くへ行った分を引きもどす (ふりこ)。外向きの速さを消す。 */
+  function constrainRope(g) {
+    const p = g.p, r = p.rope;
+    const dx = p.x - r.ax, dy = (p.y - GRIP_H) - r.ay;
+    const d = Math.hypot(dx, dy) || 1;
+    if (d > r.L) {
+      const nx = dx / d, ny = dy / d;
+      p.x = r.ax + nx * r.L;
+      p.y = r.ay + ny * r.L + GRIP_H;
+      const vr = p.vx * nx + p.vy * ny;
+      if (vr > 0) { p.vx -= vr * nx; p.vy -= vr * ny; }
+    }
+  }
+
   function rideLift(p) { return p.ride ? RIDES[p.ride.k].lift : 0; }
 
   function endRide(g, why) {
@@ -1211,9 +1301,25 @@
 
     // 走る・跳ぶ
     stepRide(g, dt);
-    p.vx = p.stun > 0 ? 0 : speedAt(p.x) * (p.ride ? RIDES[p.ride.k].speed : 1);
+    // ロープ: ボタンをおすとつかまり、はなすとはなれる (ジャンプをおしても、上へ飛んではなれる)
+    if (p.rope) {
+      if (!I.grabHeld || p.stun > 0) endRope(g, 'let', 0);
+      else if (I.jumpBuf > 0) { I.jumpBuf = 0; endRope(g, 'jump', 460); }
+      else if (p.rope.t > ROPE_MAX_T || p.x > p.rope.ax + p.rope.L * 0.88) endRope(g, 'auto', 0);
+    } else if (I.grabBuf > 0 && I.grabHeld && !p.carry && !(p.onGround && nearProp(g))) {
+      const h = nearHook(g);
+      if (h) { I.grabBuf = 0; startRope(g, h); }
+    }
+    if (p.rope) {
+      stepRopeLength(g, dt);
+      p.vx += ROPE_PULL * dt;
+    } else {
+      p.vx = p.stun > 0 ? 0 : speedAt(p.x) * (p.ride ? RIDES[p.ride.k].speed : 1);
+    }
     if (p.onGround) p.ground = 0.1; else p.ground -= dt;
-    if (I.jumpBuf > 0 && p.ground > 0 && p.stun <= 0) {
+    if (p.rope) {
+      // ぶらさがり中は、ジャンプの受けつけはしない (おしたぶんは、上の「はなれる」になる)
+    } else if (I.jumpBuf > 0 && p.ground > 0 && p.stun <= 0) {
       p.vy = -JUMP_V * g.jumpK; p.ground = 0; p.onGround = false; p.jumping = true; I.jumpBuf = 0;
       emit(g, 'jump', p.x, p.y);
     } else if (I.jumpBuf > 0 && p.ground <= 0 && !p.onGround && !p.air2 && p.airT > AIR_JUMP_AFTER && p.stun <= 0 && !nearLanding(g, p)) {
@@ -1224,6 +1330,10 @@
     if (!I.jumpHeld && p.jumping && p.vy < -CUT_V) p.vy = -CUT_V;
     const was = p.onGround;
     stepBody(g, p, dt);
+    if (p.rope) {
+      if (p.onGround && p.rope.t > 0.15) endRope(g, 'land', 0);
+      else constrainRope(g);
+    }
     p.airT = p.onGround ? 0 : p.airT + dt;
     if (p.onGround) {
       if (!was) emit(g, 'land', p.x, p.y);
@@ -1322,6 +1432,8 @@
     return {
       door: !!nearDoor(g),
       grab: !!nearProp(g),
+      rope: !!nearHook(g),
+      roping: !!g.p.rope,
       carrying: g.p.carry
     };
   }
@@ -1330,7 +1442,7 @@
     // 定数
     G: G, JUMP_V: JUMP_V, CUT_V: CUT_V, KILL_Y: KILL_Y, FLOOR_OFF: FLOOR_OFF, THROW_G: THROW_G,
     PLAYER_HW: PLAYER_HW, PLAYER_H: PLAYER_H,
-    GUNS: GUNS, GUN_BY_ID: GUN_BY_ID, PROPS: PROPS, RIDES: RIDES, GEMS: GEMS, GEM_Y: GEM_Y, UPGRADES: UPGRADES, gemCost: gemCost, ENEMIES: ENEMIES,
+    GUNS: GUNS, GUN_BY_ID: GUN_BY_ID, PROPS: PROPS, RIDES: RIDES, GEMS: GEMS, GEM_Y: GEM_Y, ROPE_MAX_L: ROPE_MAX_L, GRIP_H: GRIP_H, HOOK_H: HOOK_H, nearHook: nearHook, UPGRADES: UPGRADES, gemCost: gemCost, ENEMIES: ENEMIES,
     // 乱数
     mulberry32: mulberry32, shuffle: shuffle,
     // 世界

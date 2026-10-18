@@ -407,22 +407,32 @@ test('物の種類の表が、ソースで重なっていない (同じ鍵を 2 
   assert.strictEqual(new Set(ids).size, ids.length);
 });
 
-test('ビルの中を抜けると、追ってくる敵とのきょりがひらく (近道のごほうび)', () => {
-  let better = 0;
-  for (let seed = 1; seed <= 12; seed++) {
-    const g = Core.newGame({ seed: seed });
-    const doorB = g.world.b.find((b) => b.door);
+test('ビルの中: 追ってきた敵が、ドアから入ってきて、うしろに見える。撃てば当たる (ぜんぜん入ってこない、ではない)', () => {
+  let seen = 0, hit = 0, tot = 0, hits = 0, caught = 0;
+  for (let seed = 1; seed <= 30; seed++) {
+    const g = Core.newGame({ seed: seed, guns: ['mizu'] });
+    Core.ensure(g.world, 60000);
+    const bs = g.world.b.filter((q) => q.door && q.i > 3);
+    const b = bs[seed % bs.length];
+    assert.ok(b.exitX - b.doorX >= 400, `中が短い ${b.exitX - b.doorX}`);
     g.enemies.length = 0; g.spawnT = 99;
-    const e = Core.spawnEnemy(g, 'suit', doorB.doorX - 130);
-    g.p.x = doorB.doorX - 2; g.p.y = doorB.roofY; g.p.vy = 0; g.p.onGround = true;
-    e.x = doorB.doorX - 130; e.y = doorB.roofY; e.vy = 0;
-    Core.input(g, 'door', true);
-    const st = makeBot();
-    let gap0 = g.p.x - e.x;
-    for (let i = 0; i < 60 * 2.2 && !g.over; i++) { botStep(g, st, DT); Core.step(g, DT); }
-    if (!g.over && g.p.inside === -1 && g.p.x - e.x > gap0 + 40) better++;
+    g.p.x = b.doorX - 4; g.p.y = b.roofY; g.p.vy = 0; g.p.onGround = true;
+    const e = Core.spawnEnemy(g, 'suit', b.doorX - 40);        // 同じ屋上の、ドアのすぐ手前
+    e.y = b.roofY; e.onGround = true; e.hp = e.maxhp = 6;
+    Core.input(g, 'door', true); Core.step(g, DT); Core.input(g, 'fire', true);
+    let inView = false, h = 0;
+    for (let i = 0; i < 60 * 8 && !g.over && g.p.inside >= 0; i++) {
+      Core.step(g, DT);
+      const d = g.p.x - e.x;
+      if (e.inside === g.p.inside && e.state === 'chase' && d > 20 && d < 190) inView = true;
+      for (const ev of g.events) if (ev.t === 'hit') h++;
+      g.events.length = 0;
+    }
+    tot++; if (inView) seen++; if (h > 0) hit++; hits += h; if (g.over === 'caught') caught++;
   }
-  assert.ok(better >= 9, `きょりがひらいた ${better}/12`);
+  assert.ok(seen >= tot * 0.8, `うしろに見えた ${seen}/${tot}`);
+  assert.ok(hit >= tot * 0.8 && hits / tot >= 3, `撃って当たった ${hit}/${tot} (1 回につき ${(hits / tot).toFixed(1)} 発)`);
+  assert.ok(caught <= tot * 0.1, `つかまった ${caught}/${tot}`);
 });
 
 test('ステージは 200m ごとに進み、終わりが無い (ボーナス・水・ばくだん・イベント)', () => {
@@ -792,4 +802,132 @@ test('きたえても谷の保証は変わらない: 強化を最大にしても
   const st = makeBot();
   for (let i = 0; i < 60 * 60 && !g.over; i++) { botStep(g, st, DT); Core.step(g, DT); g.events.length = 0; }
   assert.strictEqual(g.over, null);
+});
+
+// ------------------------------------------------------------ ロープ (風船のわっか)
+function hookScene(seed, dx) {
+  const g = Core.newGame({ seed: seed, noEnemies: true });
+  Core.ensure(g.world, 40000);
+  const hb = g.world.b.find((q) => q.hooks.length && q.hooks[0].x < q.x && q.i > 2);   // 谷の上の風船
+  const pv = g.world.b[hb.i - 1], h = hb.hooks[0];
+  g.p.x = h.x - dx; g.p.y = pv.roofY; g.p.vy = 0; g.p.onGround = true; g.p.inside = -1;
+  pv.roof.props.length = 0;            // 足もとに、もてる物があると、そっちがえらばれる
+  return { g, hb, pv, h };
+}
+
+test('風船のわっか: 谷の上と長い屋上の上にあり、高さは近くの屋上のうち高いほうから HOOK_H。ぶらさがりの一番下でも足がつかない', () => {
+  let gapH = 0, roofH = 0;
+  for (let seed = 1; seed <= 20; seed++) {
+    const w = Core.createWorld(seed);
+    Core.ensure(w, Core.STAGE_PX * 4);
+    for (const b of w.b) {
+      for (const h of b.hooks) {
+        assert.ok(!b.ground, '地上の道には風船が無い');
+        if (h.x < b.x) {
+          gapH++;
+          const pv = w.b[b.i - 1];
+          assert.ok(h.x > pv.x + pv.w && b.x - (pv.x + pv.w) >= 70, '谷の上 (幅 70 以上)');
+          assert.strictEqual(h.y, Math.min(pv.roofY, b.roofY) - Core.HOOK_H);
+          // いちばん下の足もと = わっか + 長さ + 手までの高さ。両方の屋上より上
+          assert.ok(h.y + Core.ROPE_MAX_L + Core.GRIP_H < Math.min(pv.roofY, b.roofY), '足がつく');
+        } else {
+          roofH++;
+          assert.ok(h.x >= b.x && h.x <= b.x + b.w);
+          assert.strictEqual(h.y, b.roofY - Core.HOOK_H);
+        }
+      }
+    }
+  }
+  assert.ok(gapH > 40 && roofH > 20, `谷 ${gapH} / 屋上 ${roofH}`);
+});
+
+test('ロープ: ボタンをおしている間ぶらさがり、はなすと飛びだす (勢いは残る)。ちゃんと谷をわたれる', () => {
+  const { g, hb } = hookScene(5, 100);
+  const x0 = g.p.x;
+  Core.input(g, 'grab', true);
+  let attached = false, endWhy = null;
+  for (let i = 0; i < 60 * 0.8; i++) { Core.step(g, DT); if (g.p.rope) attached = true; g.events.forEach((e) => { if (e.t === 'unrope') endWhy = e.why; }); g.events.length = 0; }
+  assert.ok(attached && g.p.rope, 'つかまった');
+  assert.ok(!g.p.onGround && g.p.vx > 200, `飛んでいる (vx ${g.p.vx.toFixed(0)})`);
+  Core.input(g, 'grab', false);
+  Core.step(g, DT);
+  assert.ok(!g.p.rope, 'はなれた');
+  const vxAfter = g.p.vx;
+  assert.ok(vxAfter > 150, `はなれても勢いが残る (${vxAfter.toFixed(0)})`);
+  for (let i = 0; i < 60 * 3 && !g.over && !g.p.onGround; i++) Core.step(g, DT);
+  assert.ok(!g.over && g.p.onGround && g.p.x > hb.x, `むこうの屋上に着いた (x ${Math.round(g.p.x)} / 屋上の左はし ${hb.x})`);
+  const plain = Core.reach(Core.speedAt(x0), 0);
+  assert.ok(g.p.x - x0 > plain * 1.4, `ふつうの全力ジャンプ (${Math.round(plain)}px) より 4 割は遠くへ (${Math.round(g.p.x - x0)}px)`);
+  void endWhy;
+});
+
+test('ロープ: ぶらさがっている間、わっかからの距離は長さより遠くならない。屋上にめりこまない', () => {
+  for (const dx of [40, 100, 160]) for (let seed = 1; seed <= 6; seed++) {
+    const { g } = hookScene(seed, dx);
+    Core.input(g, 'grab', true);
+    let maxOver = 0, hadRope = false;
+    for (let i = 0; i < 60 * 2 && !g.over; i++) {
+      Core.step(g, DT);
+      if (g.p.rope) {
+        hadRope = true;
+        const d = Math.hypot(g.p.x - g.p.rope.ax, (g.p.y - Core.GRIP_H) - g.p.rope.ay);
+        maxOver = Math.max(maxOver, d - g.p.rope.L);
+        const b = Core.buildingAt(g.world, g.p.x);
+        if (b) assert.ok(g.p.y <= b.roofY + 1, `屋上にめりこんだ (seed ${seed} dx ${dx})`);
+      }
+      g.events.length = 0;
+    }
+    assert.ok(hadRope, 'つかまれなかった');
+    assert.ok(maxOver < 0.5, `ロープがのびた ${maxOver.toFixed(2)}`);
+  }
+});
+
+test('ロープ: ジャンプをおすと、上へ飛んではなれる。つかまれない時 (かかえている・屋内・遠い・しびれ) はつかまらない', () => {
+  const { g } = hookScene(3, 90);
+  Core.input(g, 'grab', true);
+  for (let i = 0; i < 30; i++) Core.step(g, DT);
+  assert.ok(g.p.rope);
+  Core.input(g, 'jump', true); Core.step(g, DT);
+  assert.ok(!g.p.rope && g.p.vy <= -400, `ジャンプではなれて、上へ (vy ${g.p.vy.toFixed(0)})`);
+  assert.ok(!g.p.air2, 'はなれたあとに、2 だんジャンプが使える');
+  // つかまれない
+  const tries = {
+    かかえている: (s) => { s.g.p.carry = 'crate'; },
+    しびれ: (s) => { s.g.p.stun = 0.5; },
+    屋内: (s) => { s.g.p.inside = 0; },
+    遠い: (s) => { s.g.p.x -= 400; }
+  };
+  for (const k of Object.keys(tries)) {
+    const s = hookScene(3, 90);
+    tries[k](s);
+    Core.input(s.g, 'grab', true);
+    for (let i = 0; i < 10; i++) Core.step(s.g, DT);
+    assert.ok(!s.g.p.rope, `${k}ときは、つかまらない`);
+  }
+  // ちかくに風船が無ければ、いままでどおり (もつ)
+  const e = Core.newGame({ seed: 2, noEnemies: true });
+  Core.input(e, 'grab', true); for (let i = 0; i < 10; i++) Core.step(e, DT);
+  assert.ok(!e.p.rope);
+});
+
+test('ロープ: ふりの一番下の宝石は、ぶらさがると取れる。つかまっていられるのは 4 秒まで', () => {
+  let gems = 0, tot = 0;
+  for (let seed = 1; seed <= 30; seed++) {
+    const w = Core.createWorld(seed);
+    Core.ensure(w, Core.STAGE_PX * 3);
+    for (const b of w.b) for (const h of b.hooks) for (const it of b.roof.items) {
+      if (it.t === 'gem' && it.x === h.x && it.y === h.y + Core.ROPE_MAX_L + 20) gems++;
+      tot++;
+    }
+  }
+  assert.ok(gems >= 10, `風船の下の宝石 ${gems}`);
+  const { g } = hookScene(5, 100);
+  Core.input(g, 'grab', true);
+  let auto = false;
+  for (let i = 0; i < 60 * 6 && !g.over; i++) {
+    Core.step(g, DT);
+    g.events.forEach((e) => { if (e.t === 'unrope' && e.why === 'auto') auto = true; });
+    g.events.length = 0;
+  }
+  assert.ok(auto, 'おしっぱなしでも、ある所で自動ではなれる');
 });

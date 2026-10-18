@@ -118,6 +118,8 @@
       switch (name) {
         case 'jump': tone(300, 640, 0.14, 'square', 0.07); break;
         case 'gem': [1318, 1760, 2093].forEach((f, i) => tone(f, f, 0.12, 'triangle', 0.13, i * 0.05)); break;
+        case 'rope': tone(300, 1400, 0.12, 'sawtooth', 0.06); noise(0.1, 0.12, 3500, 0.8); break;
+        case 'unrope': tone(900, 400, 0.12, 'triangle', 0.1); break;
         case 'jump2': tone(520, 1000, 0.12, 'square', 0.07); tone(800, 1500, 0.1, 'triangle', 0.08, 0.05); break;
         case 'hit': if (throttle('hit', 60)) { tone(520, 260, 0.08, 'triangle', 0.14); } break;
         case 'splash': noise(0.25, 0.4, 900, 0.7); break;
@@ -151,6 +153,8 @@
       switch (ev.t) {
         case 'jump': play('jump'); break;
         case 'jump2': play('jump2'); break;
+        case 'rope': play('rope'); break;
+        case 'unrope': play('unrope'); break;
         case 'gem': if (throttle('gem', 50)) play('gem'); break;
         case 'shoot': gunSound(ev.gun, { ramp: ev.ramp }); break;
         case 'charge': extraSound('charge'); break;
@@ -513,7 +517,7 @@
   const KEYS = {
     ' ': ['jump', true], ArrowUp: ['jump', true], w: ['jump', true],
     f: ['fire', true], j: ['fire', true], z: ['fire', true],
-    b: ['bomb', false], e: ['grab', false], g: ['grab', false], q: ['switch', false],
+    b: ['bomb', false], e: ['grab', true], g: ['grab', true], q: ['switch', false],
     s: ['door', false], ArrowDown: ['door', false], Enter: ['door', false]
   };
 
@@ -567,14 +571,17 @@
     }
     setText(els.bombN, 'bombs', String(g.bombs));
     const h = C.hints(g);
-    const door = !!h.door, grab = !!(h.grab || h.carrying);
+    const door = !!h.door;
+    const mode = h.roping ? 'roping' : h.carrying ? 'carry' : (h.rope && !h.grab) ? 'rope' : 'grab';
+    const grab = !!(h.grab || h.carrying || h.rope || h.roping);
     if (app.cache.door !== door) { app.cache.door = door; els.bDoor.classList.toggle('glow', door); els.bDoor.classList.toggle('off', !door && false); }
     if (app.cache.grabOn !== grab) { app.cache.grabOn = grab; els.bGrab.classList.toggle('glow', grab); }
-    const carrying = h.carrying ? 1 : 0;
-    if (app.cache.carry !== carrying) {
-      app.cache.carry = carrying;
-      els.grabLb.textContent = carrying ? 'なげる' : 'もつ';
-      els.grabIc.textContent = carrying ? '🤾' : '✋';
+    if (app.cache.grabMode !== mode) {
+      app.cache.grabMode = mode;
+      const label = { roping: 'はなす', carry: 'なげる', rope: 'ロープ', grab: 'もつ' }[mode];
+      const icon = { roping: '🕸️', carry: '🤾', rope: '🕸️', grab: '✋' }[mode];
+      els.grabLb.textContent = label;
+      els.grabIc.textContent = icon;
     }
     const noBomb = g.bombs <= 0;
     if (app.cache.noBomb !== noBomb) { app.cache.noBomb = noBomb; els.bBomb.classList.toggle('off', noBomb); }
@@ -740,6 +747,7 @@
     if (g.t > 0.7) tip('jump', 'ジャンプで谷をこえよう!');
     if (g.danger < 220) tip('fire', 'うしろの敵に「うつ」で水をかけよう!');
     const h = C.hints(g);
+    if (h.rope) tip('rope', '風船のわっかに「ロープ」! おしているあいだ ぶらんとゆれて、はなすと飛びだすよ');
     if (h.door) tip('door', '「入る」でビルの中へ。近道だよ!');
     if (h.grab && !h.carrying) tip('grab', '「もつ」→「なげる」で物を投げられる!');
     if (g.t > 12) tip('bomb', '「水ばくだん」は敵をまとめて吹き飛ばす!');
@@ -846,7 +854,7 @@
     bindButton('bBomb', 'bomb', false);
     bindButton('bSwitch', 'switch', false);
     bindButton('bDoor', 'door', false);
-    bindButton('bGrab', 'grab', false);
+    bindButton('bGrab', 'grab', true);
 
     $('btnPlay').addEventListener('click', () => { Snd.play('ui'); startGame(); });
     $('btnShop').addEventListener('click', () => { Snd.play('ui'); openShop('title'); });

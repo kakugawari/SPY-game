@@ -360,6 +360,33 @@
     void t;
   }
 
+  // ------------------------------------------------------------ ロープの風船 (わっかにつかまる)
+  const BALLOON = ['#ff6b8a', '#4cc9f0', '#ffd23f', '#7be0a8', '#b58cff'];
+  /** (h.x, h.y) がわっかの中心 (ロープをかける所)。風船はその上にふわふわ浮く */
+  function drawHook(c, h, t, near) {
+    const col = BALLOON[Math.abs(Math.round(h.x / 7)) % BALLOON.length];
+    const bob = Math.sin(t * 2 + h.x * 0.01) * 3;
+    const x = h.x, y = h.y;
+    c.save();
+    if (near) {                                           // つかまれる: わっかがぽわっと光る
+      const u = 0.5 + 0.5 * Math.sin(t * 8);
+      const gr = c.createRadialGradient(x, y, 4, x, y, 46);
+      gr.addColorStop(0, 'rgba(255,245,170,' + (0.55 + 0.3 * u).toFixed(2) + ')'); gr.addColorStop(1, 'rgba(255,245,170,0)');
+      c.fillStyle = gr; c.fillRect(x - 46, y - 46, 92, 92);
+    }
+    c.strokeStyle = 'rgba(255,255,255,.75)'; c.lineWidth = 1.4;           // 風船のひも
+    c.beginPath(); c.moveTo(x, y - 8); c.quadraticCurveTo(x + 4, y - 22 + bob, x, y - 34 + bob); c.stroke();
+    c.fillStyle = col;                                                     // 風船
+    c.beginPath(); c.ellipse(x, y - 50 + bob, 17, 21, 0, 0, TAU); c.fill();
+    c.fillStyle = 'rgba(255,255,255,.55)'; c.beginPath(); c.ellipse(x - 6, y - 56 + bob, 4.5, 7, -0.4, 0, TAU); c.fill();
+    c.fillStyle = col; c.beginPath(); c.moveTo(x - 4, y - 29 + bob); c.lineTo(x + 4, y - 29 + bob); c.lineTo(x, y - 34 + bob); c.fill();
+    c.strokeStyle = '#fff'; c.lineWidth = 3.2;                             // わっか
+    c.beginPath(); c.arc(x, y, 9, 0, TAU); c.stroke();
+    c.strokeStyle = near ? '#ffd23f' : '#8a84c4'; c.lineWidth = 1.6;
+    c.beginPath(); c.arc(x, y, 9, 0, TAU); c.stroke();
+    c.restore();
+  }
+
   // ------------------------------------------------------------ もの・アイテム
   function drawProp(c, kind, x, y, rot, scale) {
     // (x, y) は物の底の中心
@@ -687,6 +714,9 @@
     const w = s.img.width * s.k, h = s.img.height * s.k;
     c.save();
     c.translate(o.x, o.y);
+    if (o.swing != null) {                                // ぶらさがり: ロープにそって、手のところを軸に体がぶらさがる
+      c.translate(0, -C.GRIP_H); c.rotate(-o.swing * 0.9); c.translate(0, C.GRIP_H);
+    }
     if (!o.air) { c.fillStyle = 'rgba(0,0,0,.2)'; c.beginPath(); c.ellipse(0, 0, 15, 3, 0, 0, TAU); c.fill(); }
     if (o.inv > 0 && Math.floor(o.t * 20) % 2 === 0) c.globalAlpha = 0.45;
     let rot = 0;
@@ -1020,6 +1050,14 @@
       case 'land':
         for (let i = 0; i < (ev.t === 'land' ? 5 : 3); i++) addFx({ k: 'puff', x: ev.x + (Math.random() - 0.5) * 12, y: ev.y - 2, vx: (Math.random() - 0.6) * 60, vy: -Math.random() * 20, r: 3 + Math.random() * 3, life: 0.35, max: 0.35 });
         break;
+      case 'rope':
+        addFx({ k: 'ring', x: ev.hx, y: ev.hy, r: 6, max: 34, life: 0.3, col: 'rgba(255,240,160,.95)' });
+        addFx({ k: 'text', x: ev.x, y: ev.y - 54, vy: -46, txt: 'シュッ!', col: '#fff6d6', life: 0.55, size: 15 });
+        break;
+      case 'unrope':
+        for (let i = 0; i < 5; i++) addFx({ k: 'spark', x: ev.x, y: ev.y - 40, vx: -60 - Math.random() * 120, vy: (Math.random() - 0.5) * 140, life: 0.4, max: 0.4, col: '#fff6d6' });
+        if (ev.why === 'jump') addFx({ k: 'text', x: ev.x, y: ev.y - 56, vy: -46, txt: 'とうっ!', col: '#fff7c2', life: 0.6, size: 15 });
+        break;
       case 'gem': {
         const col = (GEM_COL[ev.k] || GEM_COL.ruby);
         for (let i = 0; i < 10; i++) addFx({ k: 'spark', x: ev.x, y: ev.y, vx: (Math.random() - 0.5) * 260, vy: (Math.random() - 0.8) * 260, life: 0.6, max: 0.6, col: i % 2 ? col[1] : col[0] });
@@ -1186,6 +1224,10 @@
     }
     for (const b of vis) drawBuilding(c, g, b, view, t);
 
+    // ロープの風船のわっか
+    const nearH = C.nearHook(g);
+    for (const b of vis) for (const h of b.hooks) drawHook(c, h, t, nearH === h);
+
     // もの・アイテム
     for (const b of vis) {
       for (const pr of b.roof.props) drawProp(c, pr.t, pr.x, b.roofY, 0);
@@ -1217,6 +1259,17 @@
 
     // 主人公
     const gun = C.curGun(g);
+    let swing = null;
+    if (p.rope) {                                           // ぶらさがり: 風船のわっかから手まで、ロープ
+      const gx = p.x + 1, gy = p.y - C.GRIP_H - 4;
+      c.save(); c.lineCap = 'round';
+      c.strokeStyle = 'rgba(42,33,96,.55)'; c.lineWidth = 4.5;
+      c.beginPath(); c.moveTo(p.rope.ax, p.rope.ay + 9); c.lineTo(gx, gy); c.stroke();
+      c.strokeStyle = '#fff6d6'; c.lineWidth = 2.4;
+      c.beginPath(); c.moveTo(p.rope.ax, p.rope.ay + 9); c.lineTo(gx, gy); c.stroke();
+      c.restore();
+      swing = Math.atan2(p.x - p.rope.ax, (p.y - C.GRIP_H) - p.rope.ay);
+    }
     const rd = p.ride;
     if (rd) {
       drawRide(c, rd.k, p.x, p.y, t, p.stun > 0 ? 0 : 1);
@@ -1226,7 +1279,7 @@
     }
     drawSpy(c, {
       x: p.x, y: p.y - (rd ? C.RIDES[rd.k].lift : 0), phase: rd ? 0 : p.anim, air: !p.onGround, inv: p.inv, stun: p.stun, t: t,
-      carry: p.carry, aim: view.aim || 0, shoot: view.shoot || 0, firing: (view.fireT || 0) > 0, vy: p.vy, spin: view.spin || 0, squash: view.squash || 1, gunId: gun.id, gunColor: gun.color
+      carry: p.carry, aim: view.aim || 0, shoot: view.shoot || 0, firing: (view.fireT || 0) > 0, vy: p.vy, swing: swing, spin: view.spin || 0, squash: view.squash || 1, gunId: gun.id, gunColor: gun.color
     });
     if (p.carry) drawProp(c, p.carry, p.x + 3, p.y - 62, Math.sin(t * 10) * 0.06);
     if (gun.windup && p.charge > 0.01) {

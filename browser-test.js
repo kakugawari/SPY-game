@@ -165,17 +165,34 @@ async function run() {
     const x1 = await page.evaluate(() => window.__app.demo().p.x);
     ok(x1 - x0 > 100, `タイトルの背景でスパイが走っている (+${Math.round(x1 - x0)}px)`);
 
-    // タイトルの絵 (キツネ) が読み込めて、ボタンと重ならない
+    // タイトルの絵 (題字と主人公をひとつにした絵) が読み込めて、ボタンと重ならず、後ろのゲーム画面を隠さない
     await page.waitForFunction(() => window.Art && window.Art.spritesReady(), null, { timeout: 5000 }).catch(() => {});
     const hero = await page.evaluate(() => {
-      const im = document.getElementById('heroImg').getBoundingClientRect();
+      const el = document.getElementById('titleLogo');
+      const im = el.getBoundingClientRect();
       const play = document.getElementById('btnPlay').getBoundingClientRect();
-      const logo = document.querySelector('.ribbon').getBoundingClientRect();
-      const el = document.getElementById('heroImg');
-      return { ok: el.complete && el.naturalWidth > 0, top: im.top, bottom: im.bottom, left: im.left, right: im.right, playTop: play.top, ribbonBottom: logo.bottom, w: innerWidth, sprites: window.Art.spritesReady() };
+      return { ok: el.complete && el.naturalWidth > 0, top: im.top, bottom: im.bottom, left: im.left, right: im.right, playTop: play.top, w: innerWidth, h: innerHeight, sprites: window.Art.spritesReady() };
     });
-    ok(hero.ok && hero.sprites, '主人公の絵 (タイトルの大きな絵・走る/跳ぶ/撃つ) が読み込めている');
-    ok(hero.bottom <= hero.playTop + 1 && hero.top >= hero.ribbonBottom - 12 && hero.left >= -6 && hero.right <= hero.w + 6, `タイトルの絵が「あそぶ」や題字に重ならず、画面に収まる (下 ${Math.round(hero.bottom)} <= ${Math.round(hero.playTop)})`);
+    ok(hero.ok && hero.sprites, '題字+主人公の絵と、ゲーム中の主人公の絵が読み込めている');
+    ok(hero.bottom <= hero.playTop + 1 && hero.top >= 0 && hero.left >= -6 && hero.right <= hero.w + 6, `タイトルの絵が「あそぶ」に重ならず、画面に収まる (下 ${Math.round(hero.bottom)} <= ${Math.round(hero.playTop)})`);
+    const open = hero.playTop - hero.bottom;
+    ok(open >= 200, `絵と「あそぶ」のあいだに、後ろのゲーム画面が見える 200px 以上の空きがある (${Math.round(open)}px)`);
+    // その空きの、タイトルのまんなかの点を押すと、前に何も重なっていない (=ゲーム画面がそのまま見えている)
+    const free = await page.evaluate(({ y }) => {
+      const out = [];
+      for (const x of [60, 215, 370]) { const e = document.elementFromPoint(x, y); out.push(e ? (e.id || e.className || e.tagName) : null); }
+      return out;
+    }, { y: (hero.bottom + hero.playTop) / 2 });
+    ok(free.every((n) => n === 'vTitle' || n === 'cv'), `空きには、絵もボタンも重なっていない (${free.join(', ')})`);
+    // その空きの画素が、ゲーム画面の絵 (ビルや空) で、題字の絵ではない: 空きの帯に、窓の黄色い画素がある
+    const seen = await page.evaluate(({ y0, y1 }) => {
+      const cv = document.getElementById('cv'), c = cv.getContext('2d'), k = cv.width / innerWidth;
+      const d = c.getImageData(0, Math.round(y0 * k), cv.width, Math.max(1, Math.round((y1 - y0) * k))).data;
+      let colors = new Set();
+      for (let i = 0; i < d.length; i += 4 * 37) colors.add((d[i] >> 5) + ',' + (d[i + 1] >> 5) + ',' + (d[i + 2] >> 5));
+      return colors.size;
+    }, { y0: hero.bottom + 4, y1: hero.playTop - 4 });
+    ok(seen >= 6, `空きの帯に、ゲーム画面の絵 (空・ビル・主人公) が描かれている (色の種類 ${seen})`);
 
     // ------------------------------------------------------------ はじめる
     section('あそぶ');

@@ -156,24 +156,10 @@ button { font: inherit; color: inherit; touch-action: manipulation; }
 .view.solid { background: linear-gradient(180deg, #4a3cb5, #7a56c8 55%, #c47bd0); }
 .view.dim { background: rgba(32,22,80,.55); align-items: center; justify-content: center; }
 
-.title-top { flex: 1 1 auto; display: flex; flex-direction: column; align-items: center; padding-top: 6%; }
-.logo { display: flex; flex-direction: column; align-items: center; line-height: .98; font-weight: 900; transform: rotate(-4deg); }
-.logo-1, .logo-2 {
-  -webkit-text-stroke: 14px #fff; paint-order: stroke fill;
-  text-shadow: 0 6px 0 rgba(42,33,96,.45);
-  letter-spacing: .02em;
-}
-.logo-1 { font-size: 92px; color: var(--pink); }
-.logo-2 { font-size: 92px; color: var(--mint); margin-top: -6px; margin-left: 70px; }
-.ribbon {
-  margin-top: 22px; padding: 7px 22px; border-radius: 999px; font-weight: 900; font-size: 17px; letter-spacing: .06em;
-  background: var(--yellow); color: var(--ink); border: 3px solid #fff; box-shadow: 0 4px 0 rgba(42,33,96,.45);
-  transform: rotate(-2deg);
-}
-
-.hero-wrap { position: relative; flex: 1 1 0; min-height: 0; width: 100%; margin-top: 6px; }
-.hero { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; object-position: center bottom; filter: drop-shadow(0 8px 0 rgba(42,33,96,.35)); animation: hero-bob 2.4s ease-in-out infinite alternate; pointer-events: none; }
-@keyframes hero-bob { from { transform: translateY(0) rotate(-1deg); } to { transform: translateY(-8px) rotate(1deg); } }
+.title-top { flex: 1 1 auto; display: flex; flex-direction: column; align-items: center; padding-top: 5%; pointer-events: none; }
+/* 題字と主人公は 1 枚の絵。上に小さくまとめて、後ろで走っているゲーム画面を見せる */
+.title-logo { display: block; width: min(92%, 392px); height: auto; filter: drop-shadow(0 6px 0 rgba(42,33,96,.4)); animation: logo-bob 2.6s ease-in-out infinite alternate; pointer-events: none; }
+@keyframes logo-bob { from { transform: translateY(0) rotate(-.6deg); } to { transform: translateY(-5px) rotate(.6deg); } }
 
 .title-bottom { flex: none; display: flex; flex-direction: column; align-items: center; gap: 12px; padding: 0 22px 22px; }
 

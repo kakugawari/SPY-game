@@ -161,6 +161,9 @@
   const ROPE_PULL = 520;          // ぶらさがり中、前へ進む力 (px/秒^2)
   const ROPE_KICK = 560;          // 地面からつかまったとき、とびあがる速さ
   const ROPE_MAX_T = 4;           // つかまっていられる秒
+  // 屋上の 2 かい (給水タンク・看板の上)。上から乗れて、下からは通りぬける
+  const DECK_H = 110;             // 屋上から 2 かいの上面まで (長おしジャンプの頂点 133 より低い)
+  const DECK_END = 170;           // 2 かいの右はしから、屋上の右はしまで (落ちても屋上に着く)
   const DOOR_MIN_W = 620;         // ドアのあるビルの、いちばん短い幅 (中は 500px ほど = 2 秒近く)
   const DOOR_WAIT = 0.2;          // 敵がドアの前で、中へ入るまでに待つ秒
   const DOOR_CHASE_GAP = 140;     // ビルの中で、敵はこの距離まで追いつく (それより近くはふつうの速さ)
@@ -260,6 +263,7 @@
 
   /** 地上の道の中身: 谷もじゃま物も無い 1 本道。乗り物・宝石・コイン・投げられる物がならぶ。 */
   function populateGround(world, b, prev, r) {
+    b.decks = [];
     b.roof = { items: [], props: [] };
     b.room = { items: [], props: [] };
     const far = (x, arr, d) => arr.every((o) => Math.abs(o.x - x) >= d);
@@ -368,11 +372,39 @@
         break;
       }
     }
+    // --- 屋上の 2 かい (給水タンク・看板)。上はコインと宝石のごほうびの道
+    b.decks = [];
+    if (i > 0 && b.w >= 330) {
+      const want = b.w >= 640 && r() < 0.5 ? 2 : (r() < 0.65 ? 1 : 0);
+      const lo = b.x + 100, hi = b.x + b.w - DECK_END;
+      for (let k = 0; k < want; k++) {
+        for (let tries = 0; tries < 8; tries++) {
+          const span = Math.round(150 + r() * 110);
+          const x0 = Math.round(lo + r() * Math.max(0, hi - lo - span));
+          const x1 = x0 + span;
+          if (x1 > hi) continue;
+          if (b.door && x1 > b.doorX - 70 && x0 < b.doorX + 70) continue;
+          if (b.decks.some((d) => x1 + 120 > d.x0 && x0 < d.x1 + 120)) continue;
+          b.decks.push({ x0: x0, x1: x1, y: b.roofY - DECK_H, k: r() < 0.5 ? 'tank' : 'sign' });
+          break;
+        }
+      }
+      for (const d of b.decks) {
+        if (r() < 0.6) for (let q = 0; q < 4; q++) b.roof.items.push({ x: Math.round(d.x0 + 30 + q * 30), y: d.y - 26, t: 'coin' });
+        if (r() < 0.4) b.roof.items.push({ x: Math.round(d.x1 - 30), y: d.y - 26, t: 'gem', k: pickGem(r, 1) });
+      }
+    }
+    // 2 かいの右はしの先に、風船のわっか (2 かいから、ロープでつぎのビルへ)
+    for (const d of b.decks) {
+      const hx = Math.round(d.x1 + 60);
+      if (hx < b.x + b.w - 100 && r() < 0.45 && b.hooks.every((h) => Math.abs(h.x - hx) > 220)) b.hooks.push({ x: hx, y: b.roofY - HOOK_H });
+    }
+    const underDeck = (x) => b.decks.some((d) => x > d.x0 - 24 && x < d.x1 + 24);
     // --- 屋上: 宝石 (高い所にある。長おしジャンプか 2 だんジャンプで取る)
     if (i > 0 && r() < 0.45) {
       const tier = r() < 0.6 ? 1 : 2;
       const x = Math.round(b.x + 80 + r() * Math.max(10, b.w - 240));
-      if (!(b.door && Math.abs(x - b.doorX) < 40) && far(x, b.roof.props, 30)) b.roof.items.push({ x: x, y: b.roofY - GEM_Y[tier], t: 'gem', k: pickGem(r, tier) });
+      if (!(b.door && Math.abs(x - b.doorX) < 40) && far(x, b.roof.props, 30) && !underDeck(x)) b.roof.items.push({ x: x, y: b.roofY - GEM_Y[tier], t: 'gem', k: pickGem(r, tier) });
     }
     // --- 屋上: コインの列
     if (i > 0 && r() < 0.55) {
@@ -492,6 +524,16 @@
     const bL = buildingAt(w, o.x - hw);
     if (bL && o.y > bL.roofY + 8 && px - hw >= bL.x + bL.w - 1 && o.x - hw < bL.x + bL.w) {
       o.x = bL.x + bL.w + hw;
+    }
+    // 屋上の 2 かいに着く (主人公だけ。上から落ちてきたときだけ乗る = 下からは通りぬける)
+    o.onDeck = false;
+    if (o === g.p && o.vy >= 0) {
+      const bd = buildingAt(w, o.x);
+      if (bd && bd.decks) {
+        for (const d of bd.decks) {
+          if (o.x >= d.x0 && o.x <= d.x1 && py <= d.y + 3 && o.y >= d.y) { o.y = d.y; o.vy = 0; o.onGround = true; o.onDeck = true; return; }
+        }
+      }
     }
     // 屋上に着く
     if (o.vy >= 0) {
@@ -1222,7 +1264,10 @@
     if (p.vy <= 0) return false;
     let base;
     if (p.inside >= 0) base = g.world.b[p.inside].floorY;
-    else { const b = buildingAt(g.world, p.x); if (!b) return false; base = b.roofY; }
+    else {
+      const b = buildingAt(g.world, p.x); if (!b) return false; base = b.roofY;
+      for (const dk of b.decks || []) if (p.x >= dk.x0 && p.x <= dk.x1 && dk.y >= p.y - 2) base = Math.min(base, dk.y);
+    }
     const d = base - p.y;
     return d >= -2 && d < Math.max(14, p.vy * 0.12);
   }
@@ -1461,7 +1506,7 @@
     // 定数
     G: G, JUMP_V: JUMP_V, CUT_V: CUT_V, KILL_Y: KILL_Y, FLOOR_OFF: FLOOR_OFF, THROW_G: THROW_G,
     PLAYER_HW: PLAYER_HW, PLAYER_H: PLAYER_H,
-    GUNS: GUNS, GUN_BY_ID: GUN_BY_ID, PROPS: PROPS, RIDES: RIDES, GEMS: GEMS, GEM_Y: GEM_Y, ROPE_MAX_L: ROPE_MAX_L, GRIP_H: GRIP_H, HOOK_H: HOOK_H, nearHook: nearHook, UPGRADES: UPGRADES, gemCost: gemCost, ENEMIES: ENEMIES,
+    GUNS: GUNS, GUN_BY_ID: GUN_BY_ID, PROPS: PROPS, RIDES: RIDES, GEMS: GEMS, GEM_Y: GEM_Y, DECK_H: DECK_H, DECK_END: DECK_END, ROPE_MAX_L: ROPE_MAX_L, GRIP_H: GRIP_H, HOOK_H: HOOK_H, nearHook: nearHook, UPGRADES: UPGRADES, gemCost: gemCost, ENEMIES: ENEMIES,
     // 乱数
     mulberry32: mulberry32, shuffle: shuffle,
     // 世界

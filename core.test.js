@@ -966,3 +966,90 @@ test('アクションボタン: 近くにある物で、入る → なげる →
   Core.input(e, 'act', true); for (let i = 0; i < 20; i++) Core.step(e, DT);
   assert.ok(!e.p.rope && !e.p.carry && e.p.inside === -1);
 });
+
+// ------------------------------------------------------------ 屋上の 2 かい (給水タンク・看板)
+function decksOf(seed, px) {
+  const w = Core.createWorld(seed);
+  Core.ensure(w, px || Core.STAGE_PX * 5);
+  return w;
+}
+
+test('2 かい: 屋上にだけあり、高さは DECK_H。左はしから 100px・右はしから DECK_END あけ、ドアと重ならない。2 つあれば 120px はなれる', () => {
+  let n = 0; const kinds = new Set();
+  for (let seed = 1; seed <= 30; seed++) {
+    const w = decksOf(seed);
+    for (const b of w.b) {
+      if (b.ground) { assert.strictEqual(b.decks.length, 0, '地上の道には無い'); continue; }
+      for (const d of b.decks) {
+        n++; kinds.add(d.k);
+        assert.strictEqual(d.y, b.roofY - Core.DECK_H);
+        assert.ok(d.x0 >= b.x + 100 && d.x1 <= b.x + b.w - Core.DECK_END, `はみだし seed ${seed}`);
+        assert.ok(d.x1 - d.x0 >= 150 && d.x1 - d.x0 <= 260);
+        if (b.door) assert.ok(d.x1 <= b.doorX - 70 || d.x0 >= b.doorX + 70, 'ドアに重なる');
+      }
+      const ds = b.decks.slice().sort((a, c) => a.x0 - c.x0);
+      for (let k = 1; k < ds.length; k++) assert.ok(ds[k].x0 - ds[k - 1].x1 >= 120, '2 かいどうしが近い');
+    }
+  }
+  assert.ok(n > 150 && kinds.has('tank') && kinds.has('sign'), `2 かいの数 ${n} / ${[...kinds]}`);
+});
+
+function deckScene(seed) {
+  const g = Core.newGame({ seed: seed, noEnemies: true });
+  Core.ensure(g.world, 30000);
+  const b = g.world.b.find((q) => q.i > 2 && q.decks.length);
+  const d = b.decks[0];
+  return { g, b, d };
+}
+
+test('2 かい: 長おしジャンプで上に乗れる。下からは通りぬける。乗っている間は onDeck', () => {
+  let landed = 0, through = 0;
+  for (let seed = 1; seed <= 20; seed++) {
+    const { g, b, d } = deckScene(seed);
+    b.roof.props.length = 0;
+    g.p.x = d.x0 - 60; g.p.y = b.roofY; g.p.vy = 0; g.p.onGround = true;
+    Core.input(g, 'jump', true);
+    let top = false, minY = 1e9;
+    for (let i = 0; i < 60; i++) { Core.step(g, DT); minY = Math.min(minY, g.p.y); if (g.p.onDeck) top = true; if (g.p.y < d.y + 30 && g.p.y > d.y - 5 && g.p.vy < 0) through++; }
+    Core.input(g, 'jump', false);
+    if (top) landed++;
+  }
+  assert.ok(landed >= 18, `長おしジャンプで乗れた ${landed}/20`);
+  assert.ok(through > 0, '下から上がるとき、2 かいの高さを通りぬけている (頭をぶつけない)');
+});
+
+test('2 かい: はしから走って落ちると、同じビルの屋上に着く (谷には落ちない)。どの 2 かいでも', () => {
+  let tried = 0;
+  for (let seed = 1; seed <= 25; seed++) {
+    const g = Core.newGame({ seed: seed, noEnemies: true });
+    Core.ensure(g.world, Core.STAGE_PX * 4);
+    for (const b of g.world.b) for (const d of b.decks) {
+      if (b.x > Core.STAGE_PX * 3.5) continue;
+      const h = Core.newGame({ seed: seed, noEnemies: true });
+      Core.ensure(h.world, Core.STAGE_PX * 4);
+      const hb = h.world.b[b.i];
+      h.p.x = d.x1 - 20; h.p.y = d.y; h.p.vy = 0; h.p.onGround = true;
+      let land = null;
+      for (let i = 0; i < 120 && !h.over; i++) {
+        Core.step(h, DT);
+        if (h.p.onGround && !h.p.onDeck && h.p.x > d.x1) { land = h.p.x; break; }
+      }
+      tried++;
+      assert.ok(land != null && land < hb.x + hb.w - 20 && h.p.y === hb.roofY, `seed ${seed}: 2 かいから落ちて屋上に着かない (着いた x ${land} / 屋上の右はし ${hb.x + hb.w})`);
+    }
+  }
+  assert.ok(tried > 100, `ためした 2 かい ${tried}`);
+});
+
+test('2 かい: 敵は 2 かいに乗らない (屋上を走る)。2 かいの上の主人公はつかまらない', () => {
+  const { g, b, d } = deckScene(4);
+  const h = Core.newGame({ seed: 4 });
+  Core.ensure(h.world, 30000);
+  h.enemies.length = 0; h.spawnT = 999;
+  h.p.x = d.x0 + 20; h.p.y = d.y; h.p.vy = 0; h.p.onGround = true;
+  const e = Core.spawnEnemy(h, 'suit', h.p.x - 4);
+  e.y = b.roofY; e.onGround = true;
+  for (let i = 0; i < 20; i++) Core.step(h, DT);
+  assert.ok(!h.over && e.y === b.roofY, `つかまらない (${h.over}) / 敵は屋上 (${e.y} = ${b.roofY})`);
+  void g;
+});

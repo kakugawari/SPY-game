@@ -11,7 +11,7 @@
 
   const STEP = 1 / 60;
   const VIEW_W = 520;           // 画面に見える世界のはば
-  const SPY_X = 195;            // 主人公が画面の左から何の位置に立つか (世界の単位)
+  const SPY_X = 280;            // 主人公が画面の左から何の位置に立つか (世界の単位)。まん中より少し右 = うしろの敵が見える
 
   // ------------------------------------------------------------ 保存 (まとめて書く: 終わったとき・買ったときだけ)
   // 名前を変えても、保存の鍵は変えない (買った銃やコインが消えないように)
@@ -635,8 +635,10 @@
   function updateCamera(g, dt, cam) {
     const p = g.p;
     cam.x = p.x - SPY_X;
+    // 2 かい (給水タンク・看板) に乗っている間は、屋上の高さを見つづける (カメラが上下にゆれない)
+    const refY = p.onDeck ? (C.buildingAt(g.world, p.x) || { roofY: p.y }).roofY : p.y;
     if (p.onGround || p.y > cam.ref + 140) {
-      cam.ref += (p.y - cam.ref) * Math.min(1, dt * 5);
+      cam.ref += (refY - cam.ref) * Math.min(1, dt * 5);
     }
     const target = cam.ref - app.view.h * (0.6 + 0.1 * (app.view.facade || 0));   // 地上ステージは、道を少し下に見せて街並みを広く
     cam.y += (target - cam.y) * Math.min(1, dt * 6);

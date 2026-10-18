@@ -273,6 +273,7 @@
       for (let cI = 0; cI * colW + 30 < w - 10; cI++) {
         const wx = x + 16 + cI * colW;
         if (wx + 22 > view.camX + view.w + 10 || wx < view.camX - 30) continue;
+        if (r < 4 && hash(b.i, r + 31, cI) < 0.07) { drawAC(c, wx - 3, wy + 8); continue; }     // 窓のかわりに室外機
         const lit = hash(b.i, r, cI) > 0.5;
         c.fillStyle = lit ? '#ffe6a0' : '#2f3566';
         rr(c, wx, wy, 22, 32, 3); c.fill();
@@ -282,19 +283,78 @@
     if (b.door) drawRoomWindowBand(c, g, b, inHere, t);
     // 屋上のドア小屋
     if (b.door) drawShed(c, b);
-    // かざり (水のタンク・アンテナ)
+    // かざり (アンテナ。2 かいのある所はよける)
     const deco = hash(b.i, 77);
-    if (deco < 0.3 && b.w > 260) {
-      const tx = x + b.w - 70;
-      c.fillStyle = '#8a6a5a'; c.fillRect(tx + 6, top - 12, 3, 12); c.fillRect(tx + 30, top - 12, 3, 12);
-      c.fillStyle = '#c9a28c'; rr(c, tx, top - 44, 40, 34, 8); c.fill();
-      c.fillStyle = 'rgba(255,255,255,.3)'; c.fillRect(tx + 6, top - 40, 6, 24);
-    } else if (deco > 0.75) {
+    if (deco > 0.6) {
       const ax = x + 30 + hash(b.i, 78) * (w - 80);
-      line(c, ax, top, ax, top - 38, 3, '#a9a9c9');
-      line(c, ax - 10, top - 30, ax + 10, top - 30, 2, '#a9a9c9');
-      circle(c, ax, top - 40, 3, (Math.floor(t * 2) % 2) ? '#ff6b9d' : '#ffd1e0');
+      if (!(b.decks || []).some((d) => ax > d.x0 - 20 && ax < d.x1 + 20)) {
+        line(c, ax, top, ax, top - 46, 3, '#a9a9c9');
+        line(c, ax - 12, top - 34, ax + 12, top - 34, 2, '#a9a9c9');
+        line(c, ax - 7, top - 42, ax + 7, top - 42, 2, '#a9a9c9');
+        circle(c, ax, top - 48, 3, (Math.floor(t * 2) % 2) ? '#ff6b9d' : '#ffd1e0');
+      }
     }
+  }
+
+  /** かべの室外機 (窓のかわり)。ファンがまわる */
+  function drawAC(c, x, y) {
+    c.fillStyle = '#e4e2ef'; rr(c, x, y, 28, 20, 3); c.fill();
+    c.fillStyle = '#b9b5cf'; c.fillRect(x, y + 18, 28, 2);
+    circle(c, x + 10, y + 10, 7, '#9a96b8'); circle(c, x + 10, y + 10, 2, '#6f6a94');
+    c.fillStyle = '#9a96b8'; for (let i = 0; i < 3; i++) c.fillRect(x + 20, y + 4 + i * 4, 5, 2);
+  }
+
+  const SIGN_TXT = ['みずでっぽう', 'コンコン', 'おさかな', 'なつまつり', 'スパイ', 'ジュース'];
+  /** 屋上の 2 かい。上面 (d.y) が乗れる所。乗れる所はいつも明るい黄色のふちで見せる */
+  function drawDeck(c, b, d, t, pal) {
+    const top = b.roofY, y = d.y, x0 = d.x0, x1 = d.x1, w = x1 - x0;
+    c.save();
+    if (d.k === 'tank') {
+      // 足 (4 本) とすじかい
+      const legs = [x0 + 14, x0 + w * 0.36, x0 + w * 0.64, x1 - 14];
+      for (const lx of legs) { c.fillStyle = '#6d6a8f'; c.fillRect(lx - 3, y + 40, 6, top - y - 40); }
+      c.strokeStyle = 'rgba(109,106,143,.8)'; c.lineWidth = 2;
+      for (let k = 0; k < 3; k++) { c.beginPath(); c.moveTo(legs[k], y + 46); c.lineTo(legs[k + 1], top - 6); c.moveTo(legs[k + 1], y + 46); c.lineTo(legs[k], top - 6); c.stroke(); }
+      // せんたく物 (足のあいだ)
+      if (hash(b.i, x0 | 0) > 0.4) {
+        const ly = y + 64;
+        c.strokeStyle = '#f4f1ff'; c.lineWidth = 1.2; c.beginPath(); c.moveTo(legs[0], ly); c.quadraticCurveTo((legs[0] + legs[3]) / 2, ly + 10, legs[3], ly); c.stroke();
+        const cols = ['#ff8fb2', '#7be0a8', '#ffd23f', '#8fd3ff', '#ffffff'];
+        for (let k = 1; k < 6; k++) {
+          const cx = legs[0] + (legs[3] - legs[0]) * k / 6, cy = ly + 10 * Math.sin(Math.PI * k / 6) * 0.95;
+          const sway = Math.sin(t * 3 + k) * 1.5;
+          c.fillStyle = cols[k % cols.length];
+          if (k % 2) { c.fillRect(cx - 7 + sway, cy, 14, 16); c.fillRect(cx - 10 + sway, cy, 20, 5); }
+          else { c.beginPath(); c.moveTo(cx - 6 + sway, cy); c.lineTo(cx + 6 + sway, cy); c.lineTo(cx + 8 + sway, cy + 18); c.lineTo(cx - 8 + sway, cy + 18); c.closePath(); c.fill(); }
+        }
+      }
+      // タンク (たる)
+      c.fillStyle = '#b98f74'; rr(c, x0, y + 4, w, 40, 10); c.fill();
+      c.fillStyle = '#9c735c'; for (let k = 1; k < 4; k++) c.fillRect(x0 + 4, y + 4 + k * 10, w - 8, 2);
+      c.fillStyle = 'rgba(255,255,255,.25)'; c.fillRect(x0 + 10, y + 8, 8, 32);
+      c.fillStyle = '#7d5c4a'; rr(c, x0 + w / 2 - 12, y + 18, 24, 18, 3); c.fill();
+      c.fillStyle = '#fff'; c.font = '900 11px sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle'; c.fillText('💧', x0 + w / 2, y + 27);
+    } else {
+      // 看板: 2 本の柱と、大きな板
+      for (const px of [x0 + 26, x1 - 26]) { c.fillStyle = '#5f5b86'; c.fillRect(px - 4, y + 40, 8, top - y - 40); }
+      c.strokeStyle = 'rgba(95,91,134,.8)'; c.lineWidth = 2;
+      c.beginPath(); c.moveTo(x0 + 26, y + 46); c.lineTo(x1 - 26, top - 8); c.moveTo(x1 - 26, y + 46); c.lineTo(x0 + 26, top - 8); c.stroke();
+      const hue = Math.floor(hash(b.i, x0 | 0, 3) * 360);
+      c.fillStyle = 'hsl(' + hue + ',70%,62%)'; rr(c, x0, y + 4, w, 40, 6); c.fill();
+      c.fillStyle = 'hsl(' + hue + ',70%,48%)'; c.fillRect(x0, y + 36, w, 8);
+      const on = Math.floor(t * 2 + x0) % 4 !== 0;           // ネオンがときどきまたたく
+      c.fillStyle = on ? '#fffbe6' : 'rgba(255,251,230,.55)';
+      c.font = '900 16px "Hiragino Sans","Noto Sans JP",sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+      c.fillText(SIGN_TXT[Math.floor(hash(b.i, x0 | 0, 9) * SIGN_TXT.length)], x0 + w / 2, y + 22);
+      for (let lx = x0 + 8; lx < x1 - 4; lx += 14) circle(c, lx, y + 40, 1.8, on ? '#ffe27a' : '#c9b46a');
+    }
+    // 乗れる上面: 黄色いふちと手すり
+    c.fillStyle = '#ffe27a'; rr(c, x0 - 4, y - 2, w + 8, 7, 3); c.fill();
+    c.fillStyle = '#d9a514'; c.fillRect(x0 - 4, y + 3, w + 8, 2);
+    c.strokeStyle = 'rgba(255,255,255,.75)'; c.lineWidth = 1.6;
+    c.beginPath(); c.moveTo(x0, y - 2); c.lineTo(x0, y - 16); c.lineTo(x1, y - 16); c.lineTo(x1, y - 2); c.stroke();
+    c.restore();
+    void pal;
   }
 
   function drawShed(c, b) {
@@ -1223,6 +1283,7 @@
       if (w.b[i].x + w.b[i].w >= x0) vis.push(w.b[i]);
     }
     for (const b of vis) drawBuilding(c, g, b, view, t);
+    for (const b of vis) for (const d of b.decks || []) drawDeck(c, b, d, t);
 
     // ロープの風船のわっか
     const nearH = C.nearHook(g);
@@ -1303,6 +1364,34 @@
 
     drawFx(c);
     c.restore();
+    drawChaserMarks(c, g, view);
+  }
+
+  /** 画面の左より外にいる、追ってくる敵の目じるし (左はしの「!」と、あと何 m)。近いほど赤く大きく */
+  function drawChaserMarks(c, g, view) {
+    const p = g.p;
+    view.marks = 0;
+    for (const e of g.enemies) {
+      if (e.state !== 'chase' || e.inside !== p.inside) continue;
+      const sx = e.x - view.camX;
+      if (sx > 4) continue;
+      const gapM = Math.max(0, Math.round((p.x - e.x) / 40));
+      if (gapM > 40) continue;
+      view.marks++;
+      const sy = Math.max(70, Math.min(view.h - 30, e.y - 30 - view.camY));
+      const near = Math.max(0, Math.min(1, 1 - (p.x - e.x - 280) / 320));
+      const pulse = 1 + 0.12 * near * Math.sin(view.t * 14);
+      c.save(); c.translate(16, sy); c.scale(pulse, pulse);
+      c.fillStyle = near > 0.5 ? '#ff4f6d' : '#ffb03a';
+      c.beginPath(); c.moveTo(-10, 0); c.lineTo(4, -13); c.lineTo(22, -13); c.lineTo(22, 13); c.lineTo(4, 13); c.closePath(); c.fill();
+      c.strokeStyle = '#fff'; c.lineWidth = 2.5; c.stroke();
+      c.fillStyle = '#fff'; c.font = '900 15px sans-serif'; c.textAlign = 'center'; c.textBaseline = 'middle';
+      c.fillText('!', 10, 1);
+      c.font = '800 11px sans-serif'; c.textAlign = 'left';
+      c.lineWidth = 3; c.strokeStyle = 'rgba(42,33,96,.85)';
+      c.strokeText(gapM + 'm', 26, 0); c.fillText(gapM + 'm', 26, 0);
+      c.restore();
+    }
   }
 
   window.Art = {

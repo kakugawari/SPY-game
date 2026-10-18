@@ -442,6 +442,7 @@ async function run() {
     });
     await page.waitForFunction(() => window.__app.game().stage === 3, null, { timeout: 8000 }).catch(() => {});
     await page.waitForTimeout(2500);
+    await page.waitForFunction(() => window.__app.game().p.onGround || window.__app.game().over, null, { timeout: 3000 }).catch(() => {});   // 谷を跳んでいる最中に測らない
     const back = await page.evaluate(() => { const g = window.__app.game(), b = window.Core.buildingAt(g.world, g.p.x); return { stage: g.stage, over: g.over, facade: window.__app.state().view.facade, roof: !!(b && !b.ground), text: document.getElementById('hStage').textContent }; });
     ok(back.stage === 3 && !back.over && back.roof, `道のおわりで次のステージ (屋上) へ移れる (stage ${back.stage}, over=${back.over})`);
     ok(back.facade < 0.1, `屋上にもどると街並みは消える (${back.facade.toFixed(2)})`);
@@ -884,6 +885,46 @@ async function run() {
       return n;
     });
     ok(balloon > 300, `風船の絵が画面に出る (風船色の画素 ${balloon})`);
+    await ctx.close();
+
+    // ------------------------------------------------------------ 主人公の位置・屋上の 2 かい・画面外の敵の目じるし
+    section('うしろが見える位置・屋上の 2 かい・画面外の敵');
+    ({ ctx, page } = await freshPage(browser));
+    page.on('pageerror', (e) => errors.push('2かい: ' + e.message));
+    await page.evaluate(() => window.__app.start({ seed: 9 }));
+    await sleep(300);
+    const pos = await page.evaluate(() => { const g = window.__app.game(), v = window.__app.state().view; return { sx: g.p.x - v.camX, w: v.w }; });
+    ok(pos.sx > pos.w * 0.5 && pos.sx < pos.w * 0.62, `主人公は、まん中より少し右に立つ (左から ${Math.round(pos.sx)} / 見える幅 ${Math.round(pos.w)})`);
+    const deckPx = await page.evaluate(async () => {
+      const g = window.__app.game(), C = window.Core;
+      C.ensure(g.world, 30000);
+      const b = g.world.b.find((q) => q.i > 3 && q.decks.length);
+      const d = b.decks[0];
+      g.p.x = d.x0 + 30; g.p.y = d.y; g.p.vy = 0; g.p.onGround = true; g.p.inside = -1; g.p.stun = 0.8;
+      g.enemies.length = 0; g.spawnT = 999;
+      await new Promise((r) => setTimeout(r, 250));
+      const cv = document.getElementById('cv'), c = cv.getContext('2d');
+      const dd = c.getImageData(0, 0, cv.width, cv.height).data;
+      let n = 0;
+      for (let i = 0; i < dd.length; i += 4) if (Math.abs(dd[i] - 255) < 4 && Math.abs(dd[i + 1] - 226) < 6 && Math.abs(dd[i + 2] - 122) < 8) n++;
+      return { n, onDeck: g.p.onDeck, y: g.p.y, dy: d.y };
+    });
+    ok(deckPx.onDeck && deckPx.y === deckPx.dy, `2 かいの上に立てる (onDeck ${deckPx.onDeck})`);
+    ok(deckPx.n > 400, `2 かいの「乗れるふち」(黄色) が描かれている (画素 ${deckPx.n})`);
+    const marks = await page.evaluate(async () => {
+      const g = window.__app.game(), v = window.__app.state().view, b = window.Core.buildingAt(g.world, g.p.x);
+      const e = window.Core.spawnEnemy(g, 'suit', g.p.x - 150);
+      e.y = b.roofY; e.stun = 5;
+      await new Promise((r) => setTimeout(r, 150));
+      const near = v.marks;
+      e.x = g.p.x - 520;
+      await new Promise((r) => setTimeout(r, 150));
+      const far = v.marks;
+      e.x = g.p.x - 3000;
+      await new Promise((r) => setTimeout(r, 150));
+      return { near, far, gone: v.marks };
+    });
+    ok(marks.near === 0 && marks.far === 1 && marks.gone === 0, `画面の左より外の敵にだけ「!」が出る (見えている 0 → 画面外 1 → とても遠い 0 : ${marks.near} / ${marks.far} / ${marks.gone})`);
     await ctx.close();
 
     // ------------------------------------------------------------ いちじていし

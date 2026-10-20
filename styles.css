@@ -185,6 +185,8 @@ button { font: inherit; color: inherit; touch-action: manipulation; }
 .btn-chip { cursor: pointer; }
 .how { margin: 2px 0 0; text-align: center; font-size: 13px; line-height: 1.7; font-weight: 700; color: #fff; text-shadow: 0 1px 0 rgba(42,33,96,.8), 0 0 8px rgba(42,33,96,.7); }
 .how b { color: var(--yellow); }
+/* 版と、渡された画面の高さ (実機の写真 1 枚で、ずれを確かめるため) */
+.diag { position: absolute; right: 6px; bottom: 2px; font-size: 9px; line-height: 1; font-weight: 700; color: rgba(255,255,255,.55); pointer-events: none; font-variant-numeric: tabular-nums; }
 
 /* ぶきや */
 .shop-head { flex: none; display: flex; align-items: center; gap: 10px; padding: 12px 14px 4px; }

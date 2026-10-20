@@ -243,7 +243,21 @@
   }
 
   // ------------------------------------------------------------ キャンバスの大きさ
+  // 版と、渡された画面の高さ。ずれの報告が来たら、写真 1 枚でどれが食い違うかが分かる
+  const BUILD = 18;
+  function diag() {
+    const el = document.getElementById('diag');
+    if (!el) return;
+    const r = document.getElementById('app').getBoundingClientRect();
+    const probe = document.createElement('div');
+    probe.style.cssText = 'position:absolute;visibility:hidden;height:100vh;width:1px;top:0;left:0';
+    document.body.appendChild(probe);
+    const vh = probe.offsetHeight; probe.remove();
+    el.textContent = `v${BUILD} · 描ける ${Math.round(r.top)}〜${Math.round(r.bottom)} · 窓 ${window.innerHeight} · vh ${vh} · 画面 ${screen.height}`;
+  }
+
   function resize() {
+    diag();
     const w = els.stage.clientWidth, h = els.stage.clientHeight;
     if (!(w >= 1 && h >= 1)) return;          // 組み直しの途中で 0 が来ることがある
     const dpr = Math.min(window.devicePixelRatio || 1, 2);

@@ -1075,6 +1075,37 @@ async function run() {
       await old.close();
     }
 
+    // ------------------------------------------------------------ Artifact (テストプレイ用の 1 枚 HTML) の画面の位置
+    // 向こうの下地 (:root に上下の安全域の余白) に包んで開く。安全域は iPhone 16 Plus の値 (上 59・下 34) を差し込む
+    // (chromium の env() は 0)。前は向こうの余白 + html 100% で、実機では画面全体が下へずれて下が切れた
+    section('テストプレイ用 (Artifact) の画面');
+    {
+      const tmp = path.join(require('node:os').tmpdir(), 'spy-artifact-test.html');
+      require('node:child_process').execFileSync('node', [path.join(__dirname, 'bundle.js'), '--artifact', tmp]);
+      const host = '<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}</style></head><body>\n';
+      const inset = (h) => h.replace(/env\(safe-area-inset-(top|bottom|left|right)(,\s*0px)?\)/g, (m, k) => ({ top: '59px', bottom: '34px', left: '0px', right: '0px' })[k]);
+      const html = inset(host + fs.readFileSync(tmp, 'utf8') + '\n</body></html>');
+      const actx = await browser.newContext(PHONE);
+      const ap = await actx.newPage();
+      ap.on('pageerror', (e) => errors.push('Artifact: ' + e.message));
+      await ap.setContent(html, { waitUntil: 'load' });
+      await ap.waitForFunction(() => window.__app);
+      await sleep(400);
+      const lay = await ap.evaluate(() => {
+        const r = (s) => { const b = document.querySelector(s).getBoundingClientRect(); return { t: Math.round(b.top), b: Math.round(b.bottom) }; };
+        return { pad: getComputedStyle(document.documentElement).paddingTop, app: r('#app'), stage: r('#stage'), how: r('.how'), h: innerHeight };
+      });
+      ok(lay.pad === '0px' && lay.app.t === 0 && lay.app.b === lay.h, `向こうの余白は消え、中身が画面ぴったり (余白 ${lay.pad} / 描ける ${lay.app.t}〜${lay.app.b} / 画面 ${lay.h})`);
+      ok(lay.stage.t === 59 && lay.how.b <= lay.h - 34, `上の安全域 (59) の下から始まり、タイトルの字が下の安全域より上に収まる (上 ${lay.stage.t} / 字の下 ${lay.how.b})`);
+      await ap.evaluate(() => window.__app.start({ seed: 3, noEnemies: true }));
+      await sleep(300);
+      const pl = await ap.evaluate(() => { const b = document.getElementById('pad').getBoundingClientRect(); return { t: Math.round(b.top), b: Math.round(b.bottom) }; });
+      ok(pl.b === lay.h - 34 && pl.b - pl.t === 176, `あそぶ画面のボタンの帯が、下の安全域のすぐ上 (${pl.t}〜${pl.b})`);
+      const dg = await ap.evaluate(() => document.getElementById('diag').textContent);
+      ok(/^v\d+ · 描ける 0〜932 · 窓 932 · vh 932 · 画面 932$/.test(dg), `タイトルに版と高さの診断が出る (${dg})`);
+      await actx.close();
+    }
+
     // ------------------------------------------------------------ 軽さ (CPU 4 倍遅)
     section('遅い端末でも動く (CPU を 4 倍遅く)');
     ({ ctx, page } = await freshPage(browser));

@@ -1,7 +1,7 @@
 /*
  * 全ファイルを 1 枚の HTML にまとめる (CSS も JS もアイコンも埋め込む)。
  *   node bundle.js [出力先]      既定は dist/spy-kon.html
- *   node bundle.js --artifact [出力先]   Artifact 用 (向こうが <html> と上下の安全域の余白を足すので、中身だけにして二重の余白を打ち消す)
+ *   node bundle.js --artifact [出力先]   Artifact 用 (向こうが <html> と上下の安全域の余白を足すので、中身だけにして、その余白を消す)
  * スマホで試してもらうための Artifact 用。ビルドではなく、ただ貼りつけるだけ。
  */
 const fs = require('node:fs');
@@ -30,7 +30,10 @@ if (/(href|src)="\.\//.test(html) || /['"]\.\/[\w-]+\.(webp|png|svg)['"]/.test(h
 if (artifact) {
   const title = (html.match(/<title>([^<]*)<\/title>/) || [])[1] || 'スパイ・コン';
   const style = (html.match(/<style>[\s\S]*?<\/style>/) || [''])[0]
-    .replace('</style>', '/* Artifact: 上下の安全域の余白は向こうが足す。高さは 100% で受ける */\nhtml, body { height: 100%; }\n#app { padding: 0; }\n</style>');
+    // 向こうの下地は :root に上下の安全域の余白を付ける。そのうえで html を 100% にすると、
+    // iPhone では 100% が画面より上の安全域ぶん高く渡され (932 + 59)、画面全体が下へずれて下が切れた。
+    // 向こうの余白は消して、index.html と同じ作り (100vh + #app の安全域の余白) にそろえる
+    .replace('</style>', '/* Artifact: 向こうの下地の余白を消し、index.html と同じ作りで受ける */\n:root { padding: 0 !important; }\n</style>');
   const body = html.slice(html.indexOf('<body>') + 6, html.lastIndexOf('</body>'));
   html = '<title>' + title + '</title>\n' + style + '\n' + body.trim() + '\n';
 }
